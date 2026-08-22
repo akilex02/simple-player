@@ -1,10 +1,10 @@
-# Maintainer: Tu Nombre <tu.correo@ejemplo.com>
+# Maintainer: AkiLeX raydercontacto@gmail.com
 pkgname=simple-player-bin
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Un reproductor de música hermoso y dinámico con motor GStreamer."
 arch=('x86_64')
-url="https://github.com/TU_USUARIO_DE_GITHUB/simple-player"
+url="https://github.com/akilex02/simple-player"
 license=('MIT')
 
 # Dependencias nativas en CachyOS/Arch para que funcione perfectamente
@@ -14,10 +14,10 @@ provides=('simple-player')
 conflicts=('simple-player')
 
 # URL de descarga apuntando a tu Release de GitHub (AppImage)
-source=("${pkgname}-${pkgver}.AppImage::https://github.com/TU_USUARIO_DE_GITHUB/simple-player/releases/download/v${pkgver}/simple-player_${pkgver}_amd64.AppImage")
+source=("${pkgname}-${pkgver}.AppImage::https://github.com/akilex02/simple-player/releases/download/simpleplayer/Simple_Player-x86_64.appimage")
 
 # Por seguridad, reemplaza 'SKIP' con el hash sha256 de tu AppImage usando el comando: sha256sum tu_archivo.AppImage
-sha256sums=('SKIP') 
+sha256sums=('d083f7ccbd0136f6d5d64775f7dc74ae01f6d9cf06c7732344fb0abb138f00b3')
 
 prepare() {
     chmod +x "${srcdir}/${pkgname}-${pkgver}.AppImage"
