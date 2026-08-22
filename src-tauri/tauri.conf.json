@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "simple-player",
+  "version": "0.1.0",
+  "identifier": "com.akilex.simple-player",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Simple Player",
+        "width": 1600,
+        "height": 1000
+      }
+    ],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/.cache/music-player/covers/**", "**"]
+      },
+      "csp": "default-src 'self' 'unsafe-inline' tauri: asset:; img-src 'self' asset: tauri: data: blob: http://localhost:*; connect-src ipc: http://ipc.localhost"
+    }
+
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["appimage"],
+    "icon": [
+      "icons/icon.png",
+      "icons/128x128@2x.png",
+      "icons/128x128.png",
+      "icons/32x32.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
