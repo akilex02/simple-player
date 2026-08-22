@@ -8,7 +8,7 @@ url="https://github.com/akilex02/simple-player"
 license=('MIT')
 
 # Dependencias nativas en CachyOS/Arch para que funcione perfectamente
-depends=('webkit2gtk' 'gst-plugins-good' 'gst-plugins-bad' 'gst-plugins-ugly' 'gst-libav' 'glib2' 'gtk3')
+depends=('webkit2gtk-4.1' 'gst-plugins-good' 'gst-plugins-bad' 'gst-plugins-ugly' 'gst-libav' 'glib2' 'gtk3')
 
 provides=('simple-player')
 conflicts=('simple-player')
