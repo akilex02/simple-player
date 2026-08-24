@@ -25,3 +25,6 @@ dist-ssr
 *.AppImage
 squashfs-root/
 .claude/
+
+# Nuevo crate nativo (migración a eframe/egui)
+native/target/
