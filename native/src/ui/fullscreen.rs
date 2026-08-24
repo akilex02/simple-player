@@ -1,3 +1,4 @@
+use super::visualizers::{self, VisualizerMode};
 use super::{lyrics_panel, progress, transport, volume, Size};
 use crate::state::AppState;
 use crate::theme;
@@ -5,11 +6,28 @@ use eframe::egui;
 
 /// Overlay de pantalla completa: portada/info a la izquierda, letras a la
 /// derecha (si están activas) con transición animada de opacidad, y
-/// controles ampliados abajo.
-pub fn show(ctx: &egui::Context, state: &mut AppState, last_active_lyric: &mut Option<usize>) {
+/// controles ampliados abajo. El fondo es el visualizador de espectro en
+/// vivo (barras/radial/resplandor) en vez del blur pre-horneado de la
+/// versión React.
+pub fn show(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    last_active_lyric: &mut Option<usize>,
+    spectrum: &[f32],
+    visualizer_mode: &mut VisualizerMode,
+) {
     egui::CentralPanel::default()
         .frame(egui::Frame::none().fill(theme::BG_DARK).inner_margin(40.0))
         .show(ctx, |ui| {
+            // Fondo: visualizador a pantalla completa + scrim oscuro para legibilidad.
+            let full_rect = ui.max_rect();
+            visualizers::draw(ui, full_rect, spectrum, *visualizer_mode);
+            ui.painter_at(full_rect).rect_filled(
+                full_rect,
+                0.0,
+                egui::Color32::from_black_alpha(150),
+            );
+
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("REPRODUCIENDO AHORA")
@@ -24,6 +42,13 @@ pub fn show(ctx: &egui::Context, state: &mut AppState, last_active_lyric: &mut O
                     let label = if state.show_lyrics { "Ocultar letra" } else { "Ver letra" };
                     if ui.button(label).clicked() {
                         state.toggle_lyrics_visibility();
+                    }
+                    if ui
+                        .button(format!("🎨 {}", visualizer_mode.label()))
+                        .on_hover_text("Cambiar visualizador")
+                        .clicked()
+                    {
+                        *visualizer_mode = visualizer_mode.next();
                     }
                 });
             });

@@ -15,6 +15,7 @@ use events::AppEvent;
 use gstreamer::prelude::*;
 use state::{ActiveTab, AppState};
 use std::sync::mpsc;
+use ui::visualizers::VisualizerMode;
 
 struct App {
     state: AppState,
@@ -23,6 +24,7 @@ struct App {
     rx: mpsc::Receiver<AppEvent>,
     last_spectrum: Vec<f32>,
     last_active_lyric_line: Option<usize>,
+    visualizer_mode: VisualizerMode,
 }
 
 impl App {
@@ -51,6 +53,7 @@ impl App {
             rx,
             last_spectrum: vec![-60.0; 32],
             last_active_lyric_line: None,
+            visualizer_mode: VisualizerMode::Bars,
         }
     }
 
@@ -97,7 +100,13 @@ impl eframe::App for App {
         self.state.ensure_lyrics_for_current_song();
 
         if self.state.is_fullscreen {
-            ui::fullscreen::show(ctx, &mut self.state, &mut self.last_active_lyric_line);
+            ui::fullscreen::show(
+                ctx,
+                &mut self.state,
+                &mut self.last_active_lyric_line,
+                &self.last_spectrum,
+                &mut self.visualizer_mode,
+            );
             return;
         }
 

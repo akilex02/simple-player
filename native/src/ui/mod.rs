@@ -8,6 +8,7 @@ pub mod sidebar;
 mod size;
 pub mod song_table;
 pub mod transport;
+pub mod visualizers;
 pub mod volume;
 
 pub use size::Size;
