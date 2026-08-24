@@ -8,11 +8,12 @@ mod paths;
 mod persistence;
 mod state;
 mod theme;
+mod ui;
 
 use eframe::egui;
 use events::AppEvent;
 use gstreamer::prelude::*;
-use state::AppState;
+use state::{ActiveTab, AppState};
 use std::sync::mpsc;
 
 struct App {
@@ -92,64 +93,116 @@ impl eframe::App for App {
         self.handle_keyboard_shortcuts(ctx);
         self.state.tick();
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Simple Player — prototipo nativo (Fase 2)");
-            ui.label(format!("Canciones en biblioteca: {}", self.state.songs.len()));
-
-            ui.separator();
-            match self.state.current_song() {
-                Some(song) => {
-                    ui.label(format!("{} — {}", song.title, song.artist));
-                    ui.label(format!(
-                        "{:.0}s / {}s",
-                        self.state.current_time, song.duration_secs
-                    ));
-                }
-                None => {
-                    ui.label("Ninguna canción seleccionada");
-                }
-            }
-
-            ui.horizontal(|ui| {
-                if ui.button("⏮").clicked() {
-                    self.state.handle_prev_song();
-                }
-                if ui.button(if self.state.is_playing { "⏸" } else { "▶" }).clicked() {
-                    self.state.toggle_play_pause();
-                }
-                if ui.button("⏭").clicked() {
-                    self.state.handle_next_song();
-                }
-                if ui.button("🔀 Shuffle + reproducir todo").clicked() {
-                    let songs: Vec<_> = self.state.sorted_songs().into_iter().cloned().collect();
-                    self.state.start_shuffle_play(songs);
-                }
+        egui::SidePanel::left("sidebar")
+            .exact_width(250.0)
+            .resizable(false)
+            .frame(egui::Frame::none().fill(theme::BG_SIDEBAR).inner_margin(20.0))
+            .show(ctx, |ui| {
+                ui::sidebar::show(ui, &mut self.state);
             });
 
-            ui.separator();
-            ui.label("Espectro (32 bandas, dB):");
-            let (_, painter_rect) = ui.allocate_space(egui::vec2(ui.available_width(), 120.0));
-            let painter = ui.painter_at(painter_rect);
-            let gap = 4.0;
-            let bar_width = (painter_rect.width() - gap * 31.0) / 32.0;
-            for (i, db) in self.last_spectrum.iter().enumerate() {
-                let norm = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
-                let h = norm * painter_rect.height();
-                let x = painter_rect.left() + i as f32 * (bar_width + gap);
-                let rect = egui::Rect::from_min_size(
-                    egui::pos2(x, painter_rect.bottom() - h),
-                    egui::vec2(bar_width, h),
-                );
-                painter.rect_filled(rect, 2.0, theme::ACCENT_PINK);
-            }
+        egui::TopBottomPanel::bottom("player_bar")
+            .exact_height(96.0)
+            .frame(egui::Frame::none().fill(theme::BG_CARD).inner_margin(16.0))
+            .show(ctx, |ui| {
+                self.show_player_bar(ui);
+            });
 
-            ui.separator();
-            ui.label("Primeras 15 canciones (orden actual):");
-            for song in self.state.sorted_songs().into_iter().take(15).cloned().collect::<Vec<_>>() {
-                if ui.selectable_label(false, format!("{} — {}", song.title, song.artist)).clicked() {
-                    self.state.handle_play_song_from_list(&song, None);
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().fill(theme::BG_DARK).inner_margin(28.0))
+            .show(ctx, |ui| {
+                ui::header::show(ui, &mut self.state);
+                ui.add_space(16.0);
+
+                let show_artists_grid =
+                    self.state.active_tab == ActiveTab::Artists && self.state.selected_artist.is_none();
+
+                if show_artists_grid {
+                    ui::artists_grid::show(ui, &mut self.state);
+                } else {
+                    ui::song_table::show(ui, &mut self.state);
+                }
+            });
+    }
+}
+
+impl App {
+    fn show_player_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            match self.state.current_song() {
+                Some(song) => {
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new(&song.title).color(theme::TEXT_MAIN).strong());
+                        ui.label(egui::RichText::new(&song.artist).color(theme::ACCENT_PINK).size(12.0));
+                    });
+                }
+                None => {
+                    ui.label(egui::RichText::new("Ninguna canción").color(theme::TEXT_MUTED));
                 }
             }
+
+            ui.add_space(24.0);
+            if ui.button("⏮").clicked() {
+                self.state.handle_prev_song();
+            }
+            if ui.button(if self.state.is_playing { "⏸" } else { "▶" }).clicked() {
+                self.state.toggle_play_pause();
+            }
+            if ui.button("⏭").clicked() {
+                self.state.handle_next_song();
+            }
+            if ui
+                .add(egui::Button::new("🔀").fill(if self.state.is_shuffle {
+                    theme::ACCENT_PINK
+                } else {
+                    theme::BG_CARD_HOVER
+                }))
+                .clicked()
+            {
+                self.state.toggle_shuffle();
+            }
+            if ui.button("🔁").clicked() {
+                self.state.toggle_repeat_mode();
+            }
+
+            ui.add_space(16.0);
+            if let Some(song) = self.state.current_song() {
+                ui.label(format!(
+                    "{} / {}",
+                    ui::format_time(self.state.current_time as u64),
+                    ui::format_time(song.duration_secs)
+                ));
+            }
+
+            ui.add_space(16.0);
+            ui.label("Espectro:");
+            let (_, rect) = ui.allocate_space(egui::vec2(220.0, 60.0));
+            let painter = ui.painter_at(rect);
+            let gap = 2.0;
+            let bar_width = (rect.width() - gap * 31.0) / 32.0;
+            for (i, db) in self.last_spectrum.iter().enumerate() {
+                let norm = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
+                let h = norm * rect.height();
+                let x = rect.left() + i as f32 * (bar_width + gap);
+                let bar = egui::Rect::from_min_size(
+                    egui::pos2(x, rect.bottom() - h),
+                    egui::vec2(bar_width, h),
+                );
+                painter.rect_filled(bar, 1.0, theme::ACCENT_PINK);
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let mut volume = self.state.volume as f32;
+                if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).changed() {
+                    self.state.set_volume(volume as f64);
+                }
+                if ui
+                    .add(egui::Button::new(if self.state.is_normalize_volume { "NORM ✓" } else { "NORM" }))
+                    .clicked()
+                {
+                    self.state.toggle_normalize_volume();
+                }
+            });
         });
     }
 }
