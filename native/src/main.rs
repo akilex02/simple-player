@@ -22,6 +22,7 @@ struct App {
     tx: mpsc::Sender<AppEvent>,
     rx: mpsc::Receiver<AppEvent>,
     last_spectrum: Vec<f32>,
+    last_active_lyric_line: Option<usize>,
 }
 
 impl App {
@@ -49,6 +50,7 @@ impl App {
             tx,
             rx,
             last_spectrum: vec![-60.0; 32],
+            last_active_lyric_line: None,
         }
     }
 
@@ -92,6 +94,12 @@ impl eframe::App for App {
         self.handle_events();
         self.handle_keyboard_shortcuts(ctx);
         self.state.tick();
+        self.state.ensure_lyrics_for_current_song();
+
+        if self.state.is_fullscreen {
+            ui::fullscreen::show(ctx, &mut self.state, &mut self.last_active_lyric_line);
+            return;
+        }
 
         egui::SidePanel::left("sidebar")
             .exact_width(250.0)

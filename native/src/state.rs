@@ -1,5 +1,6 @@
 use crate::audio::AudioPlayer;
 use crate::library::{scan_music_folder, select_folder, Song};
+use crate::lyrics::{self, Lyrics};
 use crate::mpris::MprisMsg;
 use crate::persistence::{load_playback_state, save_playback_state, PlaybackState};
 use rand::seq::SliceRandom;
@@ -108,6 +109,11 @@ pub struct AppState {
     pub repeat_mode: RepeatMode,
     pub is_normalize_volume: bool,
 
+    pub is_fullscreen: bool,
+    pub show_lyrics: bool,
+    pub lyrics: Option<Lyrics>,
+    lyrics_loaded_for: Option<String>,
+
     last_position_poll: Instant,
 }
 
@@ -136,6 +142,10 @@ impl AppState {
             is_shuffle: false,
             repeat_mode: RepeatMode::Off,
             is_normalize_volume: true,
+            is_fullscreen: false,
+            show_lyrics: false,
+            lyrics: None,
+            lyrics_loaded_for: None,
             last_position_poll: Instant::now(),
         }
     }
@@ -578,6 +588,58 @@ impl AppState {
         self.loading = true;
         self.songs = scan_music_folder(folder);
         self.loading = false;
+    }
+
+    // ─── Pantalla completa / letras ─────────────────────────────────────────
+
+    pub fn open_fullscreen(&mut self) {
+        self.is_fullscreen = true;
+    }
+
+    pub fn close_fullscreen(&mut self) {
+        self.is_fullscreen = false;
+    }
+
+    pub fn open_lyrics(&mut self) {
+        self.show_lyrics = true;
+        self.is_fullscreen = true;
+    }
+
+    pub fn toggle_lyrics_visibility(&mut self) {
+        self.show_lyrics = !self.show_lyrics;
+    }
+
+    /// Carga las letras de la canción actual si todavía no se cargaron para
+    /// esa ruta (equivalente al `useEffect` de `useLyrics.ts`). Lectura de
+    /// disco síncrona — rápida (un .lrc chico o un tag embebido), no amerita
+    /// un hilo aparte.
+    pub fn ensure_lyrics_for_current_song(&mut self) {
+        let Some(path) = self.current_song().map(|s| s.path.clone()) else {
+            self.lyrics = None;
+            self.lyrics_loaded_for = None;
+            return;
+        };
+        if self.lyrics_loaded_for.as_deref() == Some(path.as_str()) {
+            return;
+        }
+        self.lyrics = lyrics::get_lyrics_for_song(&path);
+        self.lyrics_loaded_for = Some(path);
+    }
+
+    /// Índice de la línea sincronizada activa según `current_time` — última
+    /// línea cuyo `time_ms` ya pasó. `None` si la letra no está sincronizada.
+    pub fn active_lyric_line_index(&self) -> Option<usize> {
+        let Some(Lyrics::Synced(lines)) = &self.lyrics else { return None };
+        let time_ms = (self.current_time * 1000.0) as u64;
+        let mut active = None;
+        for (i, line) in lines.iter().enumerate() {
+            if line.time_ms <= time_ms {
+                active = Some(i);
+            } else {
+                break;
+            }
+        }
+        active
     }
 
     /// Se llama una vez por frame desde `App::update()`. Reemplaza el

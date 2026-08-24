@@ -53,6 +53,17 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, spectrum: &[f32]) {
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("⛶").on_hover_text("Pantalla completa").clicked() {
+                state.open_fullscreen();
+            }
+            let lyrics_active = state.show_lyrics && state.is_fullscreen;
+            if ui
+                .add(egui::Button::new("📃").fill(if lyrics_active { theme::ACCENT_PINK } else { theme::BG_CARD }))
+                .on_hover_text("Ver letra")
+                .clicked()
+            {
+                state.open_lyrics();
+            }
             volume::show(ui, state, Size::Compact);
         });
     });

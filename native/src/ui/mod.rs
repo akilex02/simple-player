@@ -1,5 +1,7 @@
 pub mod artists_grid;
+pub mod fullscreen;
 pub mod header;
+pub mod lyrics_panel;
 pub mod player_bar;
 pub mod progress;
 pub mod sidebar;
