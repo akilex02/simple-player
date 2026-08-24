@@ -14,7 +14,9 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use walkdir::WalkDir;
 
+mod lyrics;
 mod mpris;
+use lyrics::Lyrics;
 use mpris::{spawn_mpris_thread, MprisMsg};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -266,21 +268,41 @@ fn set_volume(state: tauri::State<'_, GstState>, volume: f64) -> Result<(), Stri
     Ok(())
 }
 
+/// Construye el bin de `audio-filter`: siempre incluye `spectrum` (analizador FFT
+/// para el visualizador) y, si se pide y el plugin de replaygain existe, lo
+/// encadena con `rgvolume ! rglimiter` para la normalización de volumen.
+fn build_audio_filter_bin(normalize: bool) -> Option<gst::Bin> {
+    let has_spectrum = gst::ElementFactory::find("spectrum").is_some();
+    let has_replaygain = normalize
+        && gst::ElementFactory::find("rgvolume").is_some()
+        && gst::ElementFactory::find("rglimiter").is_some();
+
+    // 32 bandas @ 50ms (20 actualizaciones/seg) es de sobra para que el
+    // visualizador se vea fluido sin generar tráfico de eventos innecesario.
+    let spectrum_desc = "spectrum name=spectrum bands=32 interval=50000000 message-magnitude=true threshold=-60";
+
+    let desc = match (has_spectrum, has_replaygain) {
+        (true, true) => format!("{spectrum_desc} ! rgvolume fallback-gain=0.0 ! rglimiter"),
+        (true, false) => spectrum_desc.to_string(),
+        (false, true) => "rgvolume fallback-gain=0.0 ! rglimiter".to_string(),
+        (false, false) => return None,
+    };
+
+    gst::parse::bin_from_description(&desc, true).ok()
+}
+
 #[tauri::command]
 fn set_audio_normalization(state: tauri::State<'_, GstState>, enabled: bool) -> Result<(), String> {
     let player = state.player.lock().map_err(|e| e.to_string())?;
     let pipeline = player.pipeline();
 
-    if enabled {
-        if gst::ElementFactory::find("rgvolume").is_some() && gst::ElementFactory::find("rglimiter").is_some() {
-            if let Ok(filter) = gst::parse::bin_from_description("rgvolume fallback-gain=0.0 ! rglimiter", true) {
-                pipeline.set_property("audio-filter", &filter);
-                return Ok(());
-            }
+    match build_audio_filter_bin(enabled) {
+        Some(filter) => pipeline.set_property("audio-filter", &filter),
+        None => {
+            let null_elem: Option<&gst::Element> = None;
+            pipeline.set_property("audio-filter", null_elem);
         }
     }
-    let null_elem: Option<&gst::Element> = None;
-    pipeline.set_property("audio-filter", null_elem);
     Ok(())
 }
 
@@ -321,11 +343,18 @@ fn update_now_playing(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_lyrics(song_path: String) -> Option<Lyrics> {
+    lyrics::get_lyrics_for_song(&song_path)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Fix WebKitGTK Wayland protocol crash (Error 71 dispatching to Wayland display)
-    if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
-        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    // EXPERIMENT: try the DMA-BUF-specific renderer flag instead of disabling
+    // compositing entirely, to see if it fixes the GBM buffer allocation
+    // failure while keeping hardware compositing enabled.
+    if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
     if std::env::var("GDK_BACKEND").is_err() {
         std::env::set_var("GDK_BACKEND", "x11");
@@ -392,6 +421,12 @@ pub fn run() {
     player.connect_error(|_, err| {
         eprintln!("[GStreamer Error] {}", err);
     });
+
+    // Instala `spectrum` (+ normalización de volumen por defecto) desde el arranque,
+    // para que el visualizador funcione sin depender de que el frontend togglee nada.
+    if let Some(filter) = build_audio_filter_bin(true) {
+        pipeline.set_property("audio-filter", &filter);
+    }
 
     let gst_state = GstState {
         player: Arc::new(Mutex::new(player)),
@@ -479,6 +514,34 @@ pub fn run() {
             );
             handle.manage(MprisState { sender: mpris_sender });
 
+            // Reenvía las magnitudes del elemento `spectrum` al frontend como evento.
+            // Usamos un sync handler (no `add_watch`) porque `gst_player::Player` ya
+            // instala su propio watch async en este bus para su manejo interno de
+            // señales — un bus solo admite UN watch a la vez, así que un segundo
+            // `add_watch` fallaría en silencio. El sync handler es un mecanismo
+            // aparte (se dispara al momento de publicarse el mensaje, en el hilo
+            // que lo publica) hecho justamente para "espiar" sin robarle mensajes
+            // a quien ya los consume — por eso siempre devolvemos `Pass`.
+            if let Some(bus) = handle.state::<GstState>().player.lock().unwrap().pipeline().bus() {
+                let emit_handle = handle.clone();
+                bus.set_sync_handler(move |_, msg| {
+                    if let gst::MessageView::Element(elem) = msg.view() {
+                        if let Some(s) = elem.structure() {
+                            if s.name() == "spectrum" {
+                                if let Ok(magnitude) = s.get::<gst::List>("magnitude") {
+                                    let values: Vec<f32> = magnitude
+                                        .iter()
+                                        .filter_map(|v| v.get::<f32>().ok())
+                                        .collect();
+                                    let _ = emit_handle.emit("spectrum-data", values);
+                                }
+                            }
+                        }
+                    }
+                    gst::BusSyncReply::Pass
+                });
+            }
+
             use tauri_plugin_global_shortcut::Code;
             let manager = app.global_shortcut();
 
@@ -509,7 +572,8 @@ pub fn run() {
             get_position,
             update_now_playing,
             save_playback_state,
-            load_playback_state
+            load_playback_state,
+            get_lyrics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
