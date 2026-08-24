@@ -3789,6 +3789,7 @@ dependencies = [
  "gstreamer-player",
  "image",
  "lofty",
+ "rand 0.8.7",
  "rfd",
  "serde",
  "serde_json",
