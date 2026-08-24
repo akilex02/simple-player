@@ -105,7 +105,7 @@ impl eframe::App for App {
             .exact_height(96.0)
             .frame(egui::Frame::none().fill(theme::BG_CARD).inner_margin(16.0))
             .show(ctx, |ui| {
-                self.show_player_bar(ui);
+                ui::player_bar::show(ui, &mut self.state, &self.last_spectrum);
             });
 
         egui::CentralPanel::default()
@@ -126,86 +126,6 @@ impl eframe::App for App {
     }
 }
 
-impl App {
-    fn show_player_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            match self.state.current_song() {
-                Some(song) => {
-                    ui.vertical(|ui| {
-                        ui.label(egui::RichText::new(&song.title).color(theme::TEXT_MAIN).strong());
-                        ui.label(egui::RichText::new(&song.artist).color(theme::ACCENT_PINK).size(12.0));
-                    });
-                }
-                None => {
-                    ui.label(egui::RichText::new("Ninguna canción").color(theme::TEXT_MUTED));
-                }
-            }
-
-            ui.add_space(24.0);
-            if ui.button("⏮").clicked() {
-                self.state.handle_prev_song();
-            }
-            if ui.button(if self.state.is_playing { "⏸" } else { "▶" }).clicked() {
-                self.state.toggle_play_pause();
-            }
-            if ui.button("⏭").clicked() {
-                self.state.handle_next_song();
-            }
-            if ui
-                .add(egui::Button::new("🔀").fill(if self.state.is_shuffle {
-                    theme::ACCENT_PINK
-                } else {
-                    theme::BG_CARD_HOVER
-                }))
-                .clicked()
-            {
-                self.state.toggle_shuffle();
-            }
-            if ui.button("🔁").clicked() {
-                self.state.toggle_repeat_mode();
-            }
-
-            ui.add_space(16.0);
-            if let Some(song) = self.state.current_song() {
-                ui.label(format!(
-                    "{} / {}",
-                    ui::format_time(self.state.current_time as u64),
-                    ui::format_time(song.duration_secs)
-                ));
-            }
-
-            ui.add_space(16.0);
-            ui.label("Espectro:");
-            let (_, rect) = ui.allocate_space(egui::vec2(220.0, 60.0));
-            let painter = ui.painter_at(rect);
-            let gap = 2.0;
-            let bar_width = (rect.width() - gap * 31.0) / 32.0;
-            for (i, db) in self.last_spectrum.iter().enumerate() {
-                let norm = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
-                let h = norm * rect.height();
-                let x = rect.left() + i as f32 * (bar_width + gap);
-                let bar = egui::Rect::from_min_size(
-                    egui::pos2(x, rect.bottom() - h),
-                    egui::vec2(bar_width, h),
-                );
-                painter.rect_filled(bar, 1.0, theme::ACCENT_PINK);
-            }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let mut volume = self.state.volume as f32;
-                if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).changed() {
-                    self.state.set_volume(volume as f64);
-                }
-                if ui
-                    .add(egui::Button::new(if self.state.is_normalize_volume { "NORM ✓" } else { "NORM" }))
-                    .clicked()
-                {
-                    self.state.toggle_normalize_volume();
-                }
-            });
-        });
-    }
-}
 
 fn main() -> eframe::Result<()> {
     let icon = image::open("assets/icons/icon.png")
