@@ -168,7 +168,7 @@ impl eframe::App for App {
         ctx.request_repaint();
         self.track_fps();
         self.sample_recording(ctx);
-        self.textures.begin_frame(3);
+        self.textures.begin_frame(ctx, 3);
 
         egui::Area::new(egui::Id::new("fps_overlay"))
             .fixed_pos(egui::pos2(8.0, 4.0))

@@ -34,8 +34,7 @@ pub fn cover_thumb(
     rounding: f32,
     fallback_emoji: &str,
 ) {
-    let ctx = ui.ctx().clone();
-    let tex = cover_path.as_deref().and_then(|p| textures.get_or_load(&ctx, p));
+    let tex = cover_path.as_deref().and_then(|p| textures.get_or_load(p));
 
     match tex {
         Some(tex) => {

@@ -34,14 +34,15 @@ espectro reaccionando al audio en tiempo real. Todo validado
 interactivamente en cada fase.
 
 **Lo que falta:**
-1. **Resolver el bug de rendimiento de las carátulas (prioridad inmediata, ver abajo).**
+1. ~~Resolver el bug de rendimiento de las carátulas~~ — **RESUELTO, ver abajo.**
 2. Pulido visual fino (gradientes en botones, animaciones de hover, glow) — quedó básico comparado con el CSS original; se decidió priorizar la fidelidad alta pero no se llegó a implementar en detalle.
 3. Fase 7 (empaquetado): adaptar `scripts/build-appimage.sh` y `PKGBUILD` a un binario Cargo plano, sin Node/Tauri.
 4. Decidir qué hacer con `src/`, `src-tauri/`, `package.json`, `vite.config.ts`, etc. una vez que la versión nativa esté 100% validada (moverlos fuera del repo o eliminarlos).
+5. Opcional: quitar el overlay de "Grabar FPS" de `native/src/main.rs` (herramienta de diagnóstico temporal, ya cumplió su función) si no se le ve más uso.
 
 ---
 
-## 🔴 Bug confirmado: las carátulas causan stutter severo de scroll
+## ✅ Bug resuelto: las carátulas causaban stutter severo de scroll
 
 ### Cómo se confirmó
 
@@ -64,7 +65,30 @@ En `native/src/ui/textures.rs` ya existe un `TextureCache` con:
 
 Esto **mejoró** la situación (antes de este fix, el usuario reportó caídas a ~1fps sostenidas; después, la métrica por dt ya no las mostraba) — pero el experimento de desactivar carátulas por completo demuestra que **sigue habiendo un problema real que el presupuesto por frame no resolvió del todo**, y que la métrica de FPS no está viendo.
 
-### Hipótesis para investigar (en orden de probabilidad)
+### Causa confirmada y solución aplicada
+
+Se implementó la **Hipótesis 3** (recomendada como primer paso): mover la
+decodificación+resize de carátulas a un hilo de fondo por carga
+(`std::thread::spawn`), comunicado con el hilo principal vía un canal
+`mpsc`. El hilo de UI ya no hace `image::open(...).resize(...)` de forma
+síncrona — solo llama `ctx.load_texture(...)` (la subida a GPU) cuando el
+hilo de fondo ya entregó el buffer RGBA decodificado. Ver
+`native/src/ui/textures.rs` (`TextureCache`): ahora mantiene además un
+`HashSet<String>` de rutas `pending` (para no lanzar dos hilos por la misma
+carátula) y uno de `failed` (para no reintentar rutas que fallan al abrir).
+`begin_frame(ctx, budget)` drena el canal con `try_iter()` y sube a GPU todo
+lo que llegó desde el frame anterior, antes de resetear el presupuesto de
+cargas *nuevas* que se pueden lanzar ese frame.
+
+**Confirmado interactivamente por el usuario:** con este fix, el scroll
+agresivo por las 628 canciones quedó fluido, sin el stutter/tirones
+percibidos antes. Esto confirma que el cuello de botella real era la
+decodificación síncrona de JPEGs bloqueando el hilo de UI — **no** un
+problema de subida a GPU/driver (la Hipótesis 1, bindings de textura
+frecuentes, queda descartada; no hizo falta probar el atlas de texturas de
+la Hipótesis 4).
+
+### Hipótesis para investigar (en orden de probabilidad) — contexto histórico, ya resuelto
 
 1. **El costo real no es solo "decodificar la primera vez", sino "dibujar N texturas distintas cada frame" en este GPU/driver.** Con ~15-20 filas visibles simultáneamente, cada una con una textura distinta, eso son 15-20 *bind*/draw calls de textura por frame. Si el stack de OpenGL/Mesa de esta máquina tiene problemas con bindings de textura frecuentes (consistente con los problemas de GBM/DMA-BUF que ya vimos con WebKit todo el resto de la sesión), esto podría causar *stalls* en el driver que no se reflejan en `unstable_dt` si egui mide el tiempo antes de esperar al GPU (falta de sincronización correcta entre CPU y GPU en la medición).
    - **Cómo probarlo:** reducir drásticamente cuántas texturas distintas están visibles a la vez (por ejemplo, limitar `ROW_HEIGHT`/viewport para que solo haya 2-3 filas visibles) y ver si el stutter escala con la cantidad de texturas simultáneas en pantalla.
