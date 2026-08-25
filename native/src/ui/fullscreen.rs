@@ -1,3 +1,4 @@
+use super::textures::TextureCache;
 use super::visualizers::{self, VisualizerMode};
 use super::{lyrics_panel, progress, transport, volume, Size};
 use crate::state::AppState;
@@ -12,6 +13,7 @@ use eframe::egui;
 pub fn show(
     ctx: &egui::Context,
     state: &mut AppState,
+    textures: &mut TextureCache,
     last_active_lyric: &mut Option<usize>,
     spectrum: &[f32],
     visualizer_mode: &mut VisualizerMode,
@@ -71,13 +73,8 @@ pub fn show(
                 ui.allocate_ui(egui::vec2(left_width, body_height), |ui| {
                     ui.vertical_centered(|ui| {
                         ui.add_space(body_height * 0.15);
-                        egui::Frame::none()
-                            .fill(theme::BG_CARD_HOVER)
-                            .rounding(egui::Rounding::same(16.0))
-                            .inner_margin(50.0)
-                            .show(ui, |ui| {
-                                ui.label(egui::RichText::new("🎧").size(72.0));
-                            });
+                        let cover_path = state.current_song().and_then(|s| s.cover_art.clone());
+                        super::cover_thumb(ui, textures, &cover_path, 220.0, 16.0, "🎧");
                         ui.add_space(20.0);
                         match state.current_song() {
                             Some(song) => {

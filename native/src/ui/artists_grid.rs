@@ -1,8 +1,9 @@
+use super::textures::TextureCache;
 use crate::state::AppState;
 use crate::theme;
 use eframe::egui;
 
-pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
+pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache) {
     let groups = state.artist_groups();
 
     ui.horizontal(|ui| {
@@ -26,7 +27,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                         .show(ui, |ui| {
                             ui.set_width(168.0);
                             ui.vertical_centered(|ui| {
-                                ui.label(egui::RichText::new("🎤").size(36.0));
+                                super::cover_thumb(ui, textures, &group.representative_cover, 80.0, 12.0, "🎤");
                                 ui.add_space(6.0);
                                 ui.label(egui::RichText::new(&group.artist).color(theme::TEXT_MAIN).strong());
                                 let label = if group.count == 1 { "canción" } else { "canciones" };

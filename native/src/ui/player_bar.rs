@@ -1,21 +1,13 @@
+use super::textures::TextureCache;
 use super::{progress, transport, volume, Size};
 use crate::state::AppState;
 use crate::theme;
 use eframe::egui;
 
-pub fn show(ui: &mut egui::Ui, state: &mut AppState, spectrum: &[f32]) {
+pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache, spectrum: &[f32]) {
     ui.horizontal(|ui| {
-        // ── Portada + info de la canción actual ──────────────────────────
-        // TODO(pulido visual): reemplazar por la carátula real (egui_extras
-        // + loader de imágenes) — de momento un placeholder, el foco de esta
-        // fase es la fidelidad de los controles compartidos.
-        egui::Frame::none()
-            .fill(theme::BG_CARD_HOVER)
-            .rounding(egui::Rounding::same(10.0))
-            .inner_margin(10.0)
-            .show(ui, |ui| {
-                ui.label(egui::RichText::new("🎧").size(20.0));
-            });
+        let cover_path = state.current_song().and_then(|s| s.cover_art.clone());
+        super::cover_thumb(ui, textures, &cover_path, 64.0, 10.0, "🎧");
 
         match state.current_song() {
             Some(song) => {

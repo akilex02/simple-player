@@ -38,13 +38,10 @@ pub fn install(ctx: &egui::Context) {
             .insert(0, name.to_string());
     }
 
-    // La fuente "Proportional" por defecto pasa a ser GTAArtDeco Regular.
-    fonts
-        .families
-        .get_mut(&egui::FontFamily::Proportional)
-        .unwrap()
-        .insert(0, FONT_REGULAR.to_string());
-
+    // A propósito NO reemplazamos la familia "Proportional" por defecto: esa
+    // fuente de egui ya trae buena cobertura de emoji (🔀 ⏮ ⏭ 🎧 etc. — los
+    // usamos en botones); nuestras fuentes custom solo se piden de forma
+    // explícita vía FontFamily::Name(...) en los títulos/etiquetas de marca.
     ctx.set_fonts(fonts);
 
     let mut visuals = egui::Visuals::dark();

@@ -6,7 +6,6 @@ use crate::persistence::{load_playback_state, save_playback_state, PlaybackState
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use std::sync::mpsc::SyncSender;
-use std::time::Instant;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActiveTab {
@@ -113,8 +112,6 @@ pub struct AppState {
     pub show_lyrics: bool,
     pub lyrics: Option<Lyrics>,
     lyrics_loaded_for: Option<String>,
-
-    last_position_poll: Instant,
 }
 
 impl AppState {
@@ -146,7 +143,6 @@ impl AppState {
             show_lyrics: false,
             lyrics: None,
             lyrics_loaded_for: None,
-            last_position_poll: Instant::now(),
         }
     }
 
@@ -642,16 +638,17 @@ impl AppState {
         active
     }
 
-    /// Se llama una vez por frame desde `App::update()`. Reemplaza el
-    /// `setInterval` de 500ms de la versión React con un gate por tiempo.
+    /// Se llama una vez por frame desde `App::update()`. A diferencia del
+    /// `setInterval` de 500ms de la versión React, aquí no hace falta ningún
+    /// gate de tiempo: la app ya se redibuja cada frame (60fps+) vía
+    /// `ctx.request_repaint()`, y `position_secs()` es solo un lock de mutex
+    /// + una consulta a GStreamer — barato de llamar cada frame. Esto hace
+    /// que el resaltado de la línea de letra activa sea fluido en vez de
+    /// actualizarse a saltos de 500ms.
     pub fn tick(&mut self) {
         if !self.is_playing || self.is_dragging_seek {
             return;
         }
-        if self.last_position_poll.elapsed().as_millis() < 500 {
-            return;
-        }
-        self.last_position_poll = Instant::now();
 
         let pos = self.audio.position_secs() as f64;
         self.current_time = pos;
