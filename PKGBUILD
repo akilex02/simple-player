@@ -8,12 +8,16 @@ url="https://github.com/akilex02/simple-player"
 license=('MIT')
 
 # Dependencias nativas en CachyOS/Arch para que funcione perfectamente
-depends=('webkit2gtk-4.1' 'gst-plugins-good' 'gst-plugins-bad' 'gst-plugins-ugly' 'gst-libav' 'glib2' 'gtk3')
+# La app es nativa (eframe/egui): ya no necesita WebKit ni GTK.
+depends=('gstreamer' 'gst-plugins-base' 'gst-plugins-good' 'gst-plugins-bad' 'gst-plugins-ugly' 'gst-libav' 'glib2' 'dbus' 'libxkbcommon' 'libglvnd')
+optdepends=('xdg-desktop-portal: diálogo para elegir la carpeta de música')
 
 provides=('simple-player')
 conflicts=('simple-player')
 
-# URL de descarga apuntando a tu Release de GitHub (AppImage)
+# URL de descarga apuntando a tu Release de GitHub (AppImage).
+# OJO: al publicar un AppImage de la versión nativa hay que actualizar la URL y el hash de abajo
+# (los actuales corresponden al AppImage anterior, hecho con Tauri).
 source=("${pkgname}-${pkgver}.AppImage::https://github.com/akilex02/simple-player/releases/download/simpleplayer/Simple_Player-x86_64.appimage")
 
 # Por seguridad, reemplaza 'SKIP' con el hash sha256 de tu AppImage usando el comando: sha256sum tu_archivo.AppImage

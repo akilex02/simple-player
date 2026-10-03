@@ -1,37 +1,42 @@
 #!/bin/sh
+# Genera un AppImage del binario nativo (eframe/egui + GStreamer).
+# Requiere `linuxdeploy-plugin-appimage`: en el PATH o indicado con
+# LINUXDEPLOY_PLUGIN_APPIMAGE=/ruta/al/plugin. Los plugins de GStreamer se
+# copian del sistema, así que deben estar instalados.
 set -e
 
-export WEBKIT_DISABLE_COMPOSITING_MODE=1
-export GDK_BACKEND=x11
+cd "$(dirname "$0")/.."
 
-echo "1/4 Building release binary..."
-npx tauri build --no-bundle
+PLUGIN="${LINUXDEPLOY_PLUGIN_APPIMAGE:-linuxdeploy-plugin-appimage}"
+VERSION="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
+BUNDLE_DIR="target/release/bundle/appimage"
+APPDIR="$BUNDLE_DIR/simple-player.AppDir"
+OUTPUT="$BUNDLE_DIR/simple-player_${VERSION}_amd64.AppImage"
 
-APPDIR="src-tauri/target/release/bundle/appimage/simple-player.AppDir"
+echo "1/4 Compilando el binario release..."
+cargo build --release
+
+rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 mkdir -p "$APPDIR/usr/lib/gstreamer-1.0"
 mkdir -p "$APPDIR/usr/share/applications"
 mkdir -p "$APPDIR/usr/share/icons/hicolor/512x512/apps"
 
-echo "2/4 Setting up AppDir files & launcher..."
-cp src-tauri/target/release/simple-player "$APPDIR/usr/bin/simple-player-bin"
+echo "2/4 Preparando el AppDir y el lanzador..."
+cp target/release/simple-player "$APPDIR/usr/bin/simple-player-bin"
 
-cat << 'EOF' > "$APPDIR/usr/bin/simple-player"
+cat << 'EOF2' > "$APPDIR/usr/bin/simple-player"
 #!/bin/sh
-export WEBKIT_DISABLE_COMPOSITING_MODE=1
-export GDK_BACKEND=x11
 HERE="$(dirname "$(readlink -f "${0}")")"
 exec "${HERE}/simple-player-bin" "$@"
-EOF
+EOF2
 chmod +x "$APPDIR/usr/bin/simple-player"
 
-if [ -f "src-tauri/icons/icon.png" ]; then
-    cp "src-tauri/icons/icon.png" "$APPDIR/simple-player.png"
-    cp "src-tauri/icons/icon.png" "$APPDIR/.DirIcon"
-    cp "src-tauri/icons/icon.png" "$APPDIR/usr/share/icons/hicolor/512x512/apps/simple-player.png"
-fi
+cp assets/icons/icon.png "$APPDIR/simple-player.png"
+cp assets/icons/icon.png "$APPDIR/.DirIcon"
+cp assets/icons/icon.png "$APPDIR/usr/share/icons/hicolor/512x512/apps/simple-player.png"
 
-cat << 'EOF' > "$APPDIR/simple-player.desktop"
+cat << 'EOF2' > "$APPDIR/simple-player.desktop"
 [Desktop Entry]
 Name=Simple Player
 Exec=simple-player
@@ -39,18 +44,18 @@ Icon=simple-player
 Type=Application
 Categories=Audio;Music;Player;AudioVideo;
 Comment=Simple Player Music Player
-EOF
+EOF2
 cp "$APPDIR/simple-player.desktop" "$APPDIR/usr/share/applications/simple-player.desktop"
 
-# Create AppRun symlink which is REQUIRED for the AppImage runtime to execute
+# AppRun es obligatorio para que el runtime del AppImage ejecute la app.
 ln -sf usr/bin/simple-player "$APPDIR/AppRun"
 
-echo "3/4 Bundling GStreamer audio plugins..."
+echo "3/4 Incluyendo los plugins de audio de GStreamer..."
 (cp -r /usr/lib64/gstreamer-1.0/* "$APPDIR/usr/lib/gstreamer-1.0/" 2>/dev/null || true)
 (cp -r /usr/lib/gstreamer-1.0/* "$APPDIR/usr/lib/gstreamer-1.0/" 2>/dev/null || true)
 
-echo "4/4 Packaging AppImage binary..."
-/home/akilex/.cache/tauri/linuxdeploy-plugin-appimage.AppImage --appdir "$APPDIR"
-cp Simple_Player-x86_64.AppImage src-tauri/target/release/bundle/appimage/simple-player_0.1.0_amd64.AppImage
+echo "4/4 Empaquetando el AppImage..."
+"$PLUGIN" --appdir "$APPDIR"
+cp Simple_Player-x86_64.AppImage "$OUTPUT"
 
-echo "SUCCESS: Standalone AppImage created at src-tauri/target/release/bundle/appimage/simple-player_0.1.0_amd64.AppImage"
+echo "LISTO: AppImage creado en $OUTPUT"
