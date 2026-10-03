@@ -1,21 +1,21 @@
-use crate::events::AppEvent;
+use crate::events::{AppEvent, EventSender};
 use global_hotkey::hotkey::{Code, HotKey};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use std::collections::HashSet;
-use std::sync::mpsc::Sender;
 
 /// Atajos globales (funcionan con la ventana minimizada): F6/F7/F8 y las
 /// teclas multimedia estándar. Reemplaza a `tauri-plugin-global-shortcut`
 /// con `global-hotkey`, la librería base que ese plugin envuelve.
+///
+/// Un hilo bloquea esperando eventos y los reenvía con `EventSender`, que
+/// despierta a la UI: así la app no necesita repintar en reposo para
+/// enterarse de una tecla.
 pub struct Hotkeys {
     _manager: GlobalHotKeyManager,
-    playpause_ids: HashSet<u32>,
-    prev_ids: HashSet<u32>,
-    next_ids: HashSet<u32>,
 }
 
 impl Hotkeys {
-    pub fn register() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn register(sender: EventSender) -> Result<Self, Box<dyn std::error::Error>> {
         let manager = GlobalHotKeyManager::new()?;
 
         let playpause = [HotKey::new(None, Code::F7), HotKey::new(None, Code::MediaPlayPause)];
@@ -26,27 +26,27 @@ impl Hotkeys {
             let _ = manager.register(*hk);
         }
 
-        Ok(Self {
-            _manager: manager,
-            playpause_ids: playpause.iter().map(|h| h.id()).collect(),
-            prev_ids: prev.iter().map(|h| h.id()).collect(),
-            next_ids: next.iter().map(|h| h.id()).collect(),
-        })
-    }
+        let ids = |keys: &[HotKey]| -> HashSet<u32> { keys.iter().map(|h| h.id()).collect() };
+        let (playpause_ids, prev_ids, next_ids) = (ids(&playpause), ids(&prev), ids(&next));
 
-    /// Llamar una vez por frame: drena los eventos pendientes y los traduce a `AppEvent`.
-    pub fn poll(&self, tx: &Sender<AppEvent>) {
-        while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-            if event.state != HotKeyState::Pressed {
-                continue;
+        std::thread::spawn(move || {
+            while let Ok(event) = GlobalHotKeyEvent::receiver().recv() {
+                if event.state != HotKeyState::Pressed {
+                    continue;
+                }
+                let app_event = if playpause_ids.contains(&event.id) {
+                    AppEvent::MediaPlayPause
+                } else if prev_ids.contains(&event.id) {
+                    AppEvent::MediaPrev
+                } else if next_ids.contains(&event.id) {
+                    AppEvent::MediaNext
+                } else {
+                    continue;
+                };
+                let _ = sender.send(app_event);
             }
-            if self.playpause_ids.contains(&event.id) {
-                let _ = tx.send(AppEvent::MediaPlayPause);
-            } else if self.prev_ids.contains(&event.id) {
-                let _ = tx.send(AppEvent::MediaPrev);
-            } else if self.next_ids.contains(&event.id) {
-                let _ = tx.send(AppEvent::MediaNext);
-            }
-        }
+        });
+
+        Ok(Self { _manager: manager })
     }
 }

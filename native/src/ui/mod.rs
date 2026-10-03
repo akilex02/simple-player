@@ -24,8 +24,9 @@ pub fn format_time(seconds: u64) -> String {
     format!("{mins}:{secs:02}")
 }
 
-/// Dibuja una carátula cuadrada (o el placeholder 🎵/🎧 si no hay portada o
-/// no se pudo cargar), cacheando la textura decodificada por ruta.
+/// Dibuja una carátula cuadrada (o el placeholder si no hay portada o aún no
+/// cargó). Solo pide la textura si el cuadro está a la vista, y la pide al
+/// tamaño que de verdad se va a dibujar.
 pub fn cover_thumb(
     ui: &mut egui::Ui,
     textures: &mut TextureCache,
@@ -34,26 +35,27 @@ pub fn cover_thumb(
     rounding: f32,
     fallback_emoji: &str,
 ) {
-    let tex = cover_path.as_deref().and_then(|p| textures.get_or_load(p));
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+
+    let cover_size = textures::CoverSize::for_physical_px(size * ui.ctx().pixels_per_point());
+    let tex = cover_path.as_deref().and_then(|p| textures.get_or_load(p, cover_size));
 
     match tex {
         Some(tex) => {
-            let image = egui::Image::new((tex.id(), tex.size_vec2()))
-                .fit_to_exact_size(egui::vec2(size, size))
-                .rounding(rounding);
-            ui.add(image);
+            egui::Image::new((tex.id(), tex.size_vec2())).rounding(rounding).paint_at(ui, rect);
         }
         None => {
-            egui::Frame::none()
-                .fill(theme::BG_CARD_HOVER)
-                .rounding(rounding)
-                .show(ui, |ui| {
-                    ui.set_min_size(egui::vec2(size, size));
-                    ui.set_max_size(egui::vec2(size, size));
-                    ui.centered_and_justified(|ui| {
-                        ui.label(egui::RichText::new(fallback_emoji).size(size * 0.5));
-                    });
-                });
+            ui.painter().rect_filled(rect, rounding, theme::BG_CARD_HOVER);
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                fallback_emoji,
+                egui::FontId::proportional(size * 0.5),
+                theme::TEXT_MAIN,
+            );
         }
     }
 }

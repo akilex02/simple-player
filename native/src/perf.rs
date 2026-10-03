@@ -152,7 +152,7 @@ impl PerfHud {
         self.visible = !self.visible;
     }
 
-    pub fn show(&self, ctx: &egui::Context, latency_ms: f64) {
+    pub fn show(&self, ctx: &egui::Context, extra: &[String]) {
         if !self.visible {
             return;
         }
@@ -177,9 +177,10 @@ impl PerfHud {
             format!("Edad último espectro {age:.1} ms"),
             row("Espectro adelantado", &self.spectrum_lead_ms),
             format!("Viz sin datos nuevos {:.0} % (underrun)", self.underrun.ratio() * 100.0),
-            format!("Compensación latencia {latency_ms:+.0} ms (F4 -10 / F5 +10)"),
             row("state.tick()", &self.tick_ms),
-        ];
+        ]
+        .into_iter()
+        .chain(extra.iter().cloned());
         egui::Area::new(egui::Id::new("perf_hud"))
             .fixed_pos(egui::pos2(8.0, 8.0))
             .order(egui::Order::Debug)

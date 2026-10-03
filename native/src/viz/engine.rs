@@ -168,6 +168,7 @@ impl VizEngine {
         db.iter().map(|v| ((v - floor) / RANGE_DB).clamp(0.0, 1.0)).collect()
     }
 
+    #[cfg(test)]
     pub fn history_len(&self) -> usize {
         self.history.len()
     }

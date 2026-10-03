@@ -26,8 +26,7 @@ use viz::{engine::VizEngine, VizFrame};
 
 struct App {
     state: AppState,
-    hotkeys: Option<hotkeys::Hotkeys>,
-    tx: mpsc::Sender<AppEvent>,
+    _hotkeys: Option<hotkeys::Hotkeys>,
     rx: mpsc::Receiver<AppEvent>,
     spectrum_ring: std::sync::Arc<audio::spectrum::SpectrumRing>,
     viz_engine: VizEngine,
@@ -48,6 +47,7 @@ impl App {
 
         let audio = audio::player::init();
         let (tx, rx) = mpsc::channel::<AppEvent>();
+        let sender = events::EventSender::new(tx, cc.egui_ctx.clone());
 
         let spectrum_ring = std::sync::Arc::new(audio::spectrum::SpectrumRing::default());
         if let Ok(player) = audio.inner.lock() {
@@ -56,8 +56,8 @@ impl App {
             }
         }
 
-        let mpris_tx = mpris::spawn_mpris_thread(std::sync::Arc::clone(&audio.inner), tx.clone());
-        let hotkeys = match hotkeys::Hotkeys::register() {
+        let mpris_tx = mpris::spawn_mpris_thread(std::sync::Arc::clone(&audio.inner), sender.clone());
+        let hotkeys = match hotkeys::Hotkeys::register(sender) {
             Ok(h) => Some(h),
             Err(e) => {
                 eprintln!("[aviso] Atajos globales desactivados: {e}");
@@ -70,8 +70,7 @@ impl App {
 
         Self {
             state,
-            hotkeys,
-            tx,
+            _hotkeys: hotkeys,
             rx,
             spectrum_ring,
             viz_engine: VizEngine::new(),
@@ -163,7 +162,14 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.perf.begin_frame(Instant::now());
         self.draw(ctx);
-        self.perf.show(ctx, self.viz_latency_secs * 1000.0);
+        let (tex_count, tex_bytes) = self.textures.stats();
+        self.perf.show(
+            ctx,
+            &[
+                format!("Compensación latencia {:+.0} ms (F4 -10 / F5 +10)", self.viz_latency_secs * 1000.0),
+                format!("Texturas {tex_count} ({:.1} MB)", tex_bytes as f64 / 1_048_576.0),
+            ],
+        );
         self.perf.end_frame(Instant::now());
 
         let viz_peak = self.viz.bars.iter().cloned().fold(0.0, f32::max);
@@ -178,9 +184,6 @@ impl App {
     fn draw(&mut self, ctx: &egui::Context) {
         self.textures.begin_frame(ctx, 3);
 
-        if let Some(hotkeys) = &self.hotkeys {
-            hotkeys.poll(&self.tx);
-        }
         self.handle_events();
         self.handle_keyboard_shortcuts(ctx);
         let tick_start = Instant::now();

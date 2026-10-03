@@ -5,12 +5,12 @@ use std::time::Duration;
 pub enum Repaint {
     /// En el siguiente frame (animación o música sonando).
     Now,
-    /// En reposo: un latido lento para atender atajos globales, MPRIS y
-    /// carátulas que llegan desde otros hilos.
+    /// En reposo: un latido lento de seguridad. Atajos, MPRIS y carátulas
+    /// despiertan a la UI por sí mismos.
     After(Duration),
 }
 
-pub const IDLE_HEARTBEAT: Duration = Duration::from_millis(100);
+pub const IDLE_HEARTBEAT: Duration = Duration::from_secs(1);
 /// Por debajo de esta altura (0..1) se considera que las barras ya se apagaron.
 const SETTLED_BAR: f32 = 0.004;
 

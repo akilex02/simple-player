@@ -2,12 +2,12 @@
 /// Runs in a dedicated thread so souvlaki's Linux DBus connection stays
 /// on the thread it was created on. The rest of the app communicates
 /// with this thread through a cheap `SyncSender<MprisMsg>`.
-use crate::events::AppEvent;
+use crate::events::{AppEvent, EventSender};
 use souvlaki::{
     MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback,
     MediaPosition, PlatformConfig,
 };
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc;
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub enum MprisMsg {
 /// principal (vía `AppEvent`) cuando el usuario usa los controles del sistema.
 pub fn spawn_mpris_thread(
     player: std::sync::Arc<std::sync::Mutex<gstreamer_player::Player>>,
-    app_tx: Sender<AppEvent>,
+    app_tx: EventSender,
 ) -> mpsc::SyncSender<MprisMsg> {
     // bounded=4: latest state wins; no need to queue many msgs
     let (tx, rx) = mpsc::sync_channel::<MprisMsg>(4);
