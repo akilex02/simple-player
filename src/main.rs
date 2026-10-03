@@ -49,6 +49,7 @@ struct App {
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         theme::install(&cc.egui_ctx);
+        egui_extras::install_image_loaders(&cc.egui_ctx);
 
         let audio = audio::player::init();
         let (tx, rx) = mpsc::channel::<AppEvent>();

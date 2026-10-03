@@ -59,7 +59,7 @@ cargo run --release
 ```
 .
 ├─ Cargo.toml            # crate único (binario `simple-player`)
-├─ assets/               # fuentes (GTA Art Deco, Noto Sans) e ícono
+├─ assets/               # fuentes (GTA Art Deco, Noto Sans), ícono y logo (SVG)
 ├─ scripts/
 │  └─ build-appimage.sh  # empaqueta un AppImage
 ├─ PKGBUILD              # paquete de Arch (AppImage)

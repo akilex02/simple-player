@@ -4,11 +4,16 @@ use crate::ui::widgets::nav_item::nav_item;
 use crate::ui::widgets::pill_button::{PillButton, PillKind};
 use eframe::egui::{self, RichText};
 
+/// Lado del logo de la app (SVG) junto al nombre.
+const LOGO_SIZE: f32 = 40.0;
+
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
-    let accent = theme::accent(ui.ctx());
 
     ui.horizontal(|ui| {
-        ui.label(RichText::new(icons::DISC).size(text::XL + 4.0).color(accent));
+        ui.add(
+            egui::Image::new(egui::include_image!("../../../assets/icons/SimplePlayer.svg"))
+                .fit_to_exact_size(egui::vec2(LOGO_SIZE, LOGO_SIZE)),
+        );
         ui.label(RichText::new("SIMPLE PLAYER").font(theme::deco(text::XL)).color(theme::TEXT_MAIN));
     });
 
