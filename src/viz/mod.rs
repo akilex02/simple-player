@@ -1,5 +1,6 @@
 pub mod bands;
 pub mod engine;
+pub mod particles;
 
 use std::time::Instant;
 
