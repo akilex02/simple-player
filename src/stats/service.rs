@@ -2,6 +2,8 @@ use super::location::StatsLocation;
 use super::model::{PlayEvent, StatsRange, StatsSummary};
 use super::store::Store;
 use super::summary::build_summary;
+use super::transfer;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -9,10 +11,23 @@ use std::time::Duration;
 
 pub type Repaint = Arc<dyn Fn() + Send + Sync>;
 
+/// Resultado de la última acción de datos (exportar, importar o borrar), para mostrarlo en la pantalla.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DataOutcome {
+    Exported(usize),
+    Imported { imported: usize, duplicates: usize, invalid: usize },
+    Cleared,
+    Failed(String),
+}
+
+#[allow(dead_code)] // Export/Import/Clear los envía la pantalla de Configuración (Tarea 10)
 enum Message {
     Record(PlayEvent),
     RecordBatch(Vec<PlayEvent>),
     Summary(StatsRange),
+    Export(PathBuf),
+    Import(PathBuf),
+    Clear,
     Flush(Sender<()>),
 }
 
@@ -21,6 +36,7 @@ struct Shared {
     latest: Mutex<Option<(StatsRange, Arc<StatsSummary>)>>,
     events_version: AtomicU64,
     disabled: Mutex<Option<String>>,
+    data_outcome: Mutex<Option<DataOutcome>>,
 }
 
 /// Puerta de entrada al servicio de estadísticas. Se clona barato; todas las
@@ -82,6 +98,27 @@ impl StatsHandle {
         self.send(Message::RecordBatch(events));
     }
 
+    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 10)
+    pub fn export_to(&self, path: PathBuf) {
+        self.send(Message::Export(path));
+    }
+
+    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 10)
+    pub fn import_from(&self, path: PathBuf) {
+        self.send(Message::Import(path));
+    }
+
+    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 10)
+    pub fn clear_history(&self) {
+        self.send(Message::Clear);
+    }
+
+    /// El resultado de la última acción de datos; se entrega una sola vez.
+    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 10)
+    pub fn take_data_outcome(&self) -> Option<DataOutcome> {
+        self.shared.data_outcome.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
     pub fn request_summary(&self, range: StatsRange) {
         self.send(Message::Summary(range));
     }
@@ -138,11 +175,54 @@ fn worker(mut store: Store, rx: Receiver<Message>, shared: Arc<Shared>, repaint:
                 }
                 Err(e) => eprintln!("[stats] no se pudo calcular el resumen: {}", e.0),
             },
+            Message::Export(path) => {
+                let outcome = match store.all_events() {
+                    Ok(events) => match std::fs::write(&path, transfer::to_json(&events, chrono::Utc::now().timestamp_millis())) {
+                        Ok(()) => DataOutcome::Exported(events.len()),
+                        Err(e) => DataOutcome::Failed(format!("No se pudo guardar el archivo: {e}")),
+                    },
+                    Err(e) => DataOutcome::Failed(format!("No se pudo leer el historial: {}", e.0)),
+                };
+                publish(&shared, outcome, &repaint);
+            }
+            Message::Import(path) => {
+                let outcome = match std::fs::read_to_string(&path) {
+                    Err(e) => DataOutcome::Failed(format!("No se pudo leer el archivo: {e}")),
+                    Ok(json) => match transfer::parse(&json) {
+                        Err(e) => DataOutcome::Failed(e.to_string()),
+                        Ok(parsed) => match store.import_events(&parsed.events) {
+                            Ok(report) => {
+                                if report.imported > 0 {
+                                    shared.events_version.fetch_add(1, Ordering::SeqCst);
+                                }
+                                DataOutcome::Imported { imported: report.imported, duplicates: report.duplicates, invalid: parsed.invalid }
+                            }
+                            Err(e) => DataOutcome::Failed(format!("No se pudo importar: {}", e.0)),
+                        },
+                    },
+                };
+                publish(&shared, outcome, &repaint);
+            }
+            Message::Clear => {
+                let outcome = match store.clear() {
+                    Ok(()) => {
+                        shared.events_version.fetch_add(1, Ordering::SeqCst);
+                        DataOutcome::Cleared
+                    }
+                    Err(e) => DataOutcome::Failed(format!("No se pudo borrar el historial: {}", e.0)),
+                };
+                publish(&shared, outcome, &repaint);
+            }
             Message::Flush(done) => {
                 let _ = done.send(());
             }
         }
     }
+}
+
+fn publish(shared: &Shared, outcome: DataOutcome, repaint: &Repaint) {
+    *shared.data_outcome.lock().unwrap_or_else(|e| e.into_inner()) = Some(outcome);
+    repaint();
 }
 
 #[cfg(test)]
@@ -244,5 +324,92 @@ mod tests {
         for ext in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
         }
+    }
+
+    fn temp_file(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("sp_svc_{}_{name}", std::process::id()))
+    }
+
+    fn wait_outcome(h: &StatsHandle) -> DataOutcome {
+        h.flush(Duration::from_secs(2));
+        h.take_data_outcome().expect("hay resultado")
+    }
+
+    #[test]
+    fn exportar_e_importar_en_otra_base_reproduce_el_historial() {
+        let file = temp_file("export.json");
+        let _ = std::fs::remove_file(&file);
+        let a = StatsHandle::spawn(StatsLocation::Memory, noop());
+        a.record(event("/a"));
+        a.record(event("/b"));
+        a.flush(Duration::from_secs(2));
+        a.export_to(file.clone());
+        assert!(matches!(wait_outcome(&a), DataOutcome::Exported(2)));
+
+        let b = StatsHandle::spawn(StatsLocation::Memory, noop());
+        b.import_from(file.clone());
+        assert!(matches!(wait_outcome(&b), DataOutcome::Imported { imported: 2, duplicates: 0, invalid: 0 }));
+        b.request_summary(StatsRange::All);
+        b.flush(Duration::from_secs(2));
+        assert_eq!(b.latest_summary().unwrap().1.totals.plays, 2);
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn importar_dos_veces_no_duplica_y_lo_dice() {
+        let file = temp_file("twice.json");
+        let a = StatsHandle::spawn(StatsLocation::Memory, noop());
+        a.record(event("/a"));
+        a.flush(Duration::from_secs(2));
+        a.export_to(file.clone());
+        let _ = wait_outcome(&a);
+        a.import_from(file.clone());
+        assert!(matches!(wait_outcome(&a), DataOutcome::Imported { imported: 0, duplicates: 1, invalid: 0 }));
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn un_archivo_corrupto_o_inexistente_da_un_error_y_no_inserta_nada() {
+        let file = temp_file("bad.json");
+        std::fs::write(&file, "{ corrupto").unwrap();
+        let h = StatsHandle::spawn(StatsLocation::Memory, noop());
+        h.import_from(file.clone());
+        assert!(matches!(wait_outcome(&h), DataOutcome::Failed(_)));
+        h.import_from(temp_file("no-existe.json"));
+        assert!(matches!(wait_outcome(&h), DataOutcome::Failed(_)));
+        h.request_summary(StatsRange::All);
+        h.flush(Duration::from_secs(2));
+        assert_eq!(h.latest_summary().unwrap().1.totals.plays, 0);
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn exportar_a_una_ruta_imposible_da_un_error() {
+        let h = StatsHandle::spawn(StatsLocation::Memory, noop());
+        h.export_to(PathBuf::from("/proc/no-existe/historial.json"));
+        assert!(matches!(wait_outcome(&h), DataOutcome::Failed(_)));
+    }
+
+    #[test]
+    fn borrar_el_historial_lo_vacia_y_sube_la_version() {
+        let h = StatsHandle::spawn(StatsLocation::Memory, noop());
+        h.record(event("/a"));
+        h.flush(Duration::from_secs(2));
+        let before = h.events_version();
+        h.clear_history();
+        assert!(matches!(wait_outcome(&h), DataOutcome::Cleared));
+        assert!(h.events_version() > before);
+        h.request_summary(StatsRange::All);
+        h.flush(Duration::from_secs(2));
+        assert_eq!(h.latest_summary().unwrap().1.totals.plays, 0);
+    }
+
+    #[test]
+    fn un_servicio_deshabilitado_ignora_las_acciones_sin_entrar_en_panico() {
+        let h = StatsHandle::disabled("prueba");
+        h.export_to(PathBuf::from("/tmp/x.json"));
+        h.import_from(PathBuf::from("/tmp/x.json"));
+        h.clear_history();
+        assert!(h.take_data_outcome().is_none());
     }
 }

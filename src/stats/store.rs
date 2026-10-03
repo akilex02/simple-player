@@ -15,7 +15,6 @@ impl From<rusqlite::Error> for StoreError {
 pub type StoreResult<T> = Result<T, StoreError>;
 
 /// Cuántos eventos entraron y cuántos ya estaban al importar.
-#[allow(dead_code)] // se conecta en la Tarea 9
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ImportReport {
     pub imported: usize,
@@ -127,7 +126,6 @@ impl Store {
     }
 
     /// Todos los eventos, ordenados por fin (para exportar).
-    #[allow(dead_code)] // se conecta en la Tarea 9
     pub fn all_events(&self) -> StoreResult<Vec<PlayEvent>> {
         let mut stmt = self.conn.prepare(
             "SELECT started_at, ended_at, listened_ms, song_path, title, artist, album, duration_ms FROM play_events ORDER BY ended_at, id",
@@ -151,7 +149,6 @@ impl Store {
 
     /// Inserta los eventos que no estén ya (mismo inicio, fin y ruta) en **una sola transacción**:
     /// si algo falla, no queda ninguno.
-    #[allow(dead_code)] // se conecta en la Tarea 9
     pub fn import_events(&mut self, events: &[PlayEvent]) -> StoreResult<ImportReport> {
         let tx = self.conn.transaction()?;
         let mut report = ImportReport::default();
@@ -177,7 +174,6 @@ impl Store {
     }
 
     /// Borra todo el historial y recupera el espacio.
-    #[allow(dead_code)] // se conecta en la Tarea 9
     pub fn clear(&mut self) -> StoreResult<()> {
         self.conn.execute("DELETE FROM play_events", [])?;
         self.conn.execute_batch("VACUUM")?;

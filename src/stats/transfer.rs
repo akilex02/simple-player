@@ -1,4 +1,3 @@
-#![allow(dead_code)] // se conecta en la Tarea 9
 //! Formato de exportación/importación del historial (JSON versionado). Sin acceso a disco ni a SQLite.
 use super::model::{PlayEvent, SongSnapshot};
 use serde::{Deserialize, Serialize};
