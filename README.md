@@ -84,7 +84,7 @@ cargo run --release
 |---|---|
 | Caché de la biblioteca y carátulas, y el estado de reproducción | `~/.cache/music-player/` |
 | Historial de escucha (estadísticas) | `~/.local/share/simple-player/stats.db` (respeta `XDG_DATA_HOME`) |
-| Tamaño de la ventana (abre en 1050×750 la primera vez) | `~/.config/simple-player/window.json` (respeta `XDG_CONFIG_HOME`) |
+| Tamaño de la ventana (abre en 1050×750; mínimo 1000×650) | `~/.config/simple-player/window.json` (respeta `XDG_CONFIG_HOME`) |
 
 Todo es local; la app no usa la red.
 

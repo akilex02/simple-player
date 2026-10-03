@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 /// Tamaño con el que abre la app la primera vez.
 pub const DEFAULT_SIZE: WindowSize = WindowSize { width: 1050.0, height: 750.0 };
-const MIN_SIZE: (f32, f32) = (640.0, 480.0);
+/// Por debajo de esto la barra inferior ya no cabe sin encimarse.
+pub const MIN_SIZE: (f32, f32) = (1000.0, 650.0);
 const MAX_SIZE: (f32, f32) = (7680.0, 4320.0);
 
 /// Tamaño interior de la ventana, en puntos lógicos de egui.
@@ -57,7 +58,9 @@ pub fn save(path: &Path, size: WindowSize) -> std::io::Result<()> {
 /// `ANCHOxALTO` (por ejemplo `854x658`), para pruebas de desarrollo.
 pub fn parse_size_arg(text: &str) -> Option<WindowSize> {
     let (w, h) = text.split_once(['x', 'X'])?;
-    WindowSize { width: w.trim().parse().ok()?, height: h.trim().parse().ok()? }.sanitized()
+    // Opción de desarrollo: se respeta tal cual (sin el mínimo) para probar tamaños chicos.
+    let size = WindowSize { width: w.trim().parse().ok()?, height: h.trim().parse().ok()? };
+    (size.width.is_finite() && size.height.is_finite() && size.width > 0.0 && size.height > 0.0).then_some(size)
 }
 
 #[cfg(test)]
@@ -100,7 +103,7 @@ mod tests {
 
     #[test]
     fn los_tamanos_absurdos_se_acotan() {
-        assert_eq!(size(10.0, 10.0).sanitized(), Some(size(640.0, 480.0)));
+        assert_eq!(size(10.0, 10.0).sanitized(), Some(size(1000.0, 650.0)));
         assert_eq!(size(99999.0, 99999.0).sanitized(), Some(size(7680.0, 4320.0)));
         assert_eq!(size(1050.0, 750.0).sanitized(), Some(size(1050.0, 750.0)));
     }
@@ -113,7 +116,7 @@ mod tests {
 
     #[test]
     fn el_json_guardado_con_un_tamano_enorme_se_acota_al_leerlo() {
-        assert_eq!(parse("{\"width\": 50000.0, \"height\": 100.0}"), Some(size(7680.0, 480.0)));
+        assert_eq!(parse("{\"width\": 50000.0, \"height\": 100.0}"), Some(size(7680.0, 650.0)));
     }
 
     #[test]

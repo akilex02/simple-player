@@ -12,11 +12,11 @@ use crate::theme::{self, icons, text, with_alpha};
 use crate::viz::VizFrame;
 use eframe::egui::{self, RichText};
 
-const CONTROLS_H: f32 = 168.0;
-const BOTTOM_MARGIN: f32 = 32.0;
+const CONTROLS_H: f32 = 124.0;
+const BOTTOM_MARGIN: f32 = 28.0;
 const STRIP_H: f32 = 84.0;
 /// Margen sobre la fila de botones y alto del botón de reproducir (`Size::Large`).
-const TRANSPORT_TOP: f32 = 20.0;
+const TRANSPORT_TOP: f32 = 16.0;
 const TRANSPORT_H: f32 = 64.0;
 /// Alto de la fila de la línea de tiempo y separación con los botones.
 const PROGRESS_H: f32 = 22.0;
@@ -159,7 +159,7 @@ impl FullscreenView {
             }
         }
 
-        let center_w = (inner.width() - 460.0).clamp(320.0, 540.0);
+        let center_w = (inner.width() - 460.0).clamp(320.0, 360.0);
         let center = egui::Rect::from_center_size(egui::pos2(inner.center().x, controls.center().y), egui::vec2(center_w, controls.height()));
         // Velo: sube desde transparente hasta oscuro para que los controles se lean sobre las barras.
         let veil = egui::Rect::from_min_max(egui::pos2(rect.left(), controls.top() - 60.0), rect.max);
