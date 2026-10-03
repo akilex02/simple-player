@@ -44,6 +44,41 @@ impl PlaybackClock {
     }
 }
 
+/// Tras un seek, el reproductor tarda en reportar la posición nueva y sigue
+/// informando la anterior unos instantes. Mientras dura esa ventana se
+/// muestra la posición esperada (destino + tiempo transcurrido).
+pub struct SeekGuard {
+    target: f64,
+    at: Option<Instant>,
+}
+
+const SEEK_SETTLE_SECS: f64 = 0.4;
+/// Si lo reportado ya está así de cerca de lo esperado, el seek terminó.
+const SEEK_CLOSE_ENOUGH_SECS: f64 = 0.25;
+
+impl SeekGuard {
+    pub fn new() -> Self {
+        Self { target: 0.0, at: None }
+    }
+
+    pub fn on_seek(&mut self, target: f64, now: Instant) {
+        self.target = target;
+        self.at = Some(now);
+    }
+
+    /// Posición que debe mostrarse dado lo que reportó el reproductor.
+    pub fn resolve(&mut self, reported: f64, now: Instant) -> f64 {
+        let Some(at) = self.at else { return reported };
+        let elapsed = now.saturating_duration_since(at).as_secs_f64();
+        let expected = self.target + elapsed;
+        if elapsed >= SEEK_SETTLE_SECS || (reported - expected).abs() <= SEEK_CLOSE_ENOUGH_SECS {
+            self.at = None;
+            return reported;
+        }
+        expected
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,5 +135,39 @@ mod tests {
         c.resync(10.15, ms(t0, 100));
         let after = c.now(ms(t0, 100));
         assert!(after > 10.1 && after < 10.15, "corrección parcial, obtuvo {after}");
+    }
+
+    // ── SeekGuard ──────────────────────────────────────────────────────────
+    #[test]
+    fn sin_seek_se_confia_en_lo_reportado() {
+        let mut g = SeekGuard::new();
+        assert_eq!(g.resolve(12.3, Instant::now()), 12.3);
+    }
+
+    #[test]
+    fn justo_despues_de_un_seek_se_muestra_el_destino_aunque_el_reproductor_diga_otra_cosa() {
+        let t0 = Instant::now();
+        let mut g = SeekGuard::new();
+        g.on_seek(40.0, t0);
+        let shown = g.resolve(12.0, ms(t0, 100));
+        assert!((shown - 40.1).abs() < 1e-6, "{shown}");
+    }
+
+    #[test]
+    fn cuando_lo_reportado_alcanza_lo_esperado_se_confia_en_el_reproductor() {
+        let t0 = Instant::now();
+        let mut g = SeekGuard::new();
+        g.on_seek(40.0, t0);
+        assert_eq!(g.resolve(40.08, ms(t0, 100)), 40.08);
+        // y la guarda queda liberada: un valor lejano ya no se sobrescribe
+        assert_eq!(g.resolve(55.0, ms(t0, 150)), 55.0);
+    }
+
+    #[test]
+    fn pasada_la_ventana_se_confia_en_el_reproductor_aunque_difiera() {
+        let t0 = Instant::now();
+        let mut g = SeekGuard::new();
+        g.on_seek(40.0, t0);
+        assert_eq!(g.resolve(12.0, ms(t0, 900)), 12.0);
     }
 }

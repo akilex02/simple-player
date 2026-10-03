@@ -18,6 +18,14 @@ pub enum Lyrics {
     Plain(Vec<String>),
 }
 
+/// Índice de la última línea cuyo tiempo ya pasó. Se compara en milisegundos
+/// redondeados: `40.58 * 1000.0` da 40579.99…, y truncar dejaría sin activar
+/// justo la línea a la que se acaba de hacer seek.
+pub fn active_line(lines: &[SyncedLine], time_secs: f64) -> Option<usize> {
+    let time_ms = (time_secs * 1000.0).round().max(0.0) as u64;
+    lines.partition_point(|l| l.time_ms <= time_ms).checked_sub(1)
+}
+
 /// [mm:ss.xx] o [mm:ss:xx] al inicio de línea
 fn parse_lrc_timestamp(tag: &str) -> Option<u64> {
     let tag = tag.trim_start_matches('[').trim_end_matches(']');
@@ -94,4 +102,39 @@ pub fn get_lyrics_for_song(song_path: &str) -> Option<Lyrics> {
 
     let raw = read_local_lrc_file(path).or_else(|| read_embedded_lyrics(path))?;
     Some(parse_lyrics(&raw))
+}
+
+#[cfg(test)]
+mod active_line_tests {
+    use super::*;
+
+    fn lines(times: &[u64]) -> Vec<SyncedLine> {
+        times.iter().map(|t| SyncedLine { time_ms: *t, text: format!("l{t}") }).collect()
+    }
+
+    #[test]
+    fn antes_de_la_primera_linea_no_hay_activa() {
+        assert_eq!(active_line(&lines(&[2790, 4390]), 1.0), None);
+    }
+
+    #[test]
+    fn es_la_ultima_linea_cuyo_tiempo_ya_paso() {
+        let l = lines(&[2790, 4390, 6790]);
+        assert_eq!(active_line(&l, 5.0), Some(1));
+        assert_eq!(active_line(&l, 99.0), Some(2));
+    }
+
+    #[test]
+    fn el_tiempo_exacto_de_una_linea_la_activa_pese_al_error_flotante() {
+        let l = lines(&[39_920, 40_580]);
+        for secs in [39.92_f64, 40.58, 0.1 + 40.48] {
+            let expected = if secs >= 40.58 - 1e-9 { Some(1) } else { Some(0) };
+            assert_eq!(active_line(&l, secs), expected, "secs = {secs}");
+        }
+    }
+
+    #[test]
+    fn sin_lineas_no_hay_activa() {
+        assert_eq!(active_line(&[], 10.0), None);
+    }
 }

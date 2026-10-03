@@ -12,6 +12,8 @@ use crate::viz::VizFrame;
 use eframe::egui::{self, RichText};
 
 const CONTROLS_H: f32 = 168.0;
+const BOTTOM_MARGIN: f32 = 32.0;
+const STRIP_H: f32 = 84.0;
 
 /// Pantalla completa "Ahora suena": un overlay que aparece y desaparece con
 /// fundido sobre la app. Portada grande, fondo desenfocado, visualizador como
@@ -66,9 +68,10 @@ impl FullscreenView {
         let (area, opacity) = match self.mode {
             VisualizerMode::Off => return,
             VisualizerMode::Strip => {
+                let bottom = rect.bottom() - BOTTOM_MARGIN - CONTROLS_H - 6.0;
                 let band = egui::Rect::from_min_max(
-                    egui::pos2(rect.left() + 56.0, rect.bottom() - CONTROLS_H - 90.0),
-                    egui::pos2(rect.right() - 56.0, rect.bottom() - CONTROLS_H + 20.0),
+                    egui::pos2(rect.left() + 56.0, bottom - STRIP_H),
+                    egui::pos2(rect.right() - 56.0, bottom),
                 );
                 (band, 0.75)
             }
@@ -82,10 +85,15 @@ impl FullscreenView {
     fn content(&mut self, ui: &mut egui::Ui, rect: egui::Rect, state: &mut AppState, textures: &mut TextureCache, anim: f32) {
         let ctx = ui.ctx().clone();
         let accent = theme::accent(&ctx);
-        let inner = rect.shrink2(egui::vec2(56.0, 32.0));
+        let inner = rect.shrink2(egui::vec2(56.0, BOTTOM_MARGIN));
         let top = egui::Rect::from_min_size(inner.min, egui::vec2(inner.width(), 44.0));
         let controls = egui::Rect::from_min_max(egui::pos2(inner.left(), inner.bottom() - CONTROLS_H), inner.max);
-        let body = egui::Rect::from_min_max(egui::pos2(inner.left(), top.bottom() + 8.0), egui::pos2(inner.right(), controls.top() - 8.0));
+        // La franja del visualizador ocupa su propio espacio sobre los controles.
+        let strip_space = if self.mode == VisualizerMode::Strip { STRIP_H + 12.0 } else { 0.0 };
+        let body = egui::Rect::from_min_max(
+            egui::pos2(inner.left(), top.bottom() + 8.0),
+            egui::pos2(inner.right(), controls.top() - 8.0 - strip_space),
+        );
 
         let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(top).layout(egui::Layout::left_to_right(egui::Align::Center)));
         bar.label(RichText::new("REPRODUCIENDO AHORA").font(theme::bold(text::XS)).color(accent));

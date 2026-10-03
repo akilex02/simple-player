@@ -113,6 +113,14 @@ pub fn build_audio_filter_bin(normalize: bool) -> Option<gst::Bin> {
     gst::parse::bin_from_description(&desc, true).ok()
 }
 
+/// Por defecto gst-player salta al keyframe más cercano: en algunos formatos
+/// eso desvía el seek hasta ~1 s. Las letras necesitan el instante exacto.
+fn enable_accurate_seek(player: &gst_player::Player) {
+    let mut config = player.config();
+    config.set_seek_accurate(true);
+    let _ = player.set_config(config);
+}
+
 /// Inicializa GStreamer, crea el `Player`, selecciona el audio-sink que de
 /// verdad puede abrir el dispositivo, e instala el audio-filter inicial
 /// (spectrum + normalización). Sin los env vars de WebKit — no aplican sin WebView.
@@ -151,6 +159,7 @@ pub fn init() -> AudioPlayer {
     let player = gst_player::Player::new(None::<gst_player::PlayerVideoRenderer>, Some(dispatcher));
 
     player.set_volume(0.8);
+    enable_accurate_seek(&player);
     let pipeline = player.pipeline();
 
     for sink_name in ["pulsesink", "pipewiresink", "alsasink"] {
@@ -177,5 +186,19 @@ pub fn init() -> AudioPlayer {
 
     AudioPlayer {
         inner: Arc::new(Mutex::new(player)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn el_seek_preciso_queda_activado_en_el_reproductor() {
+        gst::init().unwrap();
+        let player = gst_player::Player::new(None::<gst_player::PlayerVideoRenderer>, None::<gst_player::PlayerSignalDispatcher>);
+        assert!(!player.config().is_seek_accurate(), "por defecto salta a keyframes");
+        enable_accurate_seek(&player);
+        assert!(player.config().is_seek_accurate());
     }
 }

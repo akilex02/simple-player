@@ -58,11 +58,18 @@ impl App {
         }
 
         let mpris_tx = mpris::spawn_mpris_thread(std::sync::Arc::clone(&audio.inner), sender.clone());
-        let hotkeys = match hotkeys::Hotkeys::register(sender) {
+        // Las capturas de desarrollo no deben pelear los atajos con otra instancia
+        // abierta: X responde con BadAccess y Xlib mata el proceso.
+        let skip_hotkeys = std::env::args().any(|a| a == "--shot" || a == "--no-hotkeys");
+        let hotkeys = if skip_hotkeys {
+            None
+        } else {
+            match hotkeys::Hotkeys::register(sender) {
             Ok(h) => Some(h),
             Err(e) => {
                 eprintln!("[aviso] Atajos globales desactivados: {e}");
                 None
+            }
             }
         };
 
@@ -86,6 +93,15 @@ impl App {
             state.current_time = secs;
         }
         state.is_fullscreen = std::env::args().any(|a| a == "--fullscreen");
+        let mut fullscreen_view = ui::fullscreen::FullscreenView::default();
+        if let Some(mode) = ui::gallery::arg_value("--viz") {
+            while fullscreen_view.mode.label().to_lowercase() != mode.to_lowercase() && fullscreen_view.mode.next() != ui::visualizers::VisualizerMode::Bars {
+                fullscreen_view.mode = fullscreen_view.mode.next();
+            }
+            if fullscreen_view.mode.label().to_lowercase() != mode.to_lowercase() {
+                fullscreen_view.mode = ui::visualizers::VisualizerMode::Bars;
+            }
+        }
         state.show_lyrics = std::env::args().any(|a| a == "--lyrics");
         let gallery = std::env::args().any(|a| a == "--gallery").then(|| ui::gallery::Gallery::new(&state.songs));
 
@@ -100,7 +116,7 @@ impl App {
             last_clock_sync: Instant::now(),
             last_draw: Instant::now(),
             viz_latency_secs: 0.0,
-            fullscreen: ui::fullscreen::FullscreenView::default(),
+            fullscreen: fullscreen_view,
             textures: TextureCache::default(),
             perf: perf::PerfHud::new(),
             gallery,

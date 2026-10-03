@@ -1,3 +1,4 @@
+use crate::audio::clock::SeekGuard;
 use crate::audio::AudioPlayer;
 use crate::library::{scan_music_folder, select_folder, Song};
 use crate::library_view::{self, AlbumGroup, LibraryView};
@@ -8,6 +9,7 @@ use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActiveTab {
@@ -114,6 +116,7 @@ pub struct AppState {
     pub show_queue: bool,
     /// Pide que la barra superior enfoque el buscador en el próximo frame.
     pub focus_search: bool,
+    seek_guard: SeekGuard,
 
     pub sort_field: SortField,
     pub sort_direction: SortDirection,
@@ -153,6 +156,7 @@ impl AppState {
             selected_album: None,
             show_queue: false,
             focus_search: false,
+            seek_guard: SeekGuard::new(),
             sort_field: SortField::Title,
             sort_direction: SortDirection::Asc,
             artist_sort_order: SortDirection::Asc,
@@ -453,6 +457,7 @@ impl AppState {
     pub fn seek_commit(&mut self, new_secs: f64) {
         self.is_dragging_seek = false;
         self.current_time = new_secs;
+        self.seek_guard.on_seek(new_secs, Instant::now());
         let _ = self.audio.seek(new_secs);
     }
 
@@ -559,16 +564,7 @@ impl AppState {
     /// línea cuyo `time_ms` ya pasó. `None` si la letra no está sincronizada.
     pub fn active_lyric_line_index(&self) -> Option<usize> {
         let Some(Lyrics::Synced(lines)) = &self.lyrics else { return None };
-        let time_ms = (self.current_time * 1000.0) as u64;
-        let mut active = None;
-        for (i, line) in lines.iter().enumerate() {
-            if line.time_ms <= time_ms {
-                active = Some(i);
-            } else {
-                break;
-            }
-        }
-        active
+        lyrics::active_line(lines, self.current_time)
     }
 
     /// Se llama una vez por frame desde `App::update()`. A diferencia del
@@ -583,7 +579,8 @@ impl AppState {
             return;
         }
 
-        let pos = self.audio.position_secs() as f64;
+        let reported = self.audio.try_position_secs().unwrap_or(self.current_time);
+        let pos = self.seek_guard.resolve(reported, Instant::now());
         self.current_time = pos;
 
         if let Some(song) = self.current_song() {

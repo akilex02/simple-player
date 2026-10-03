@@ -16,7 +16,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, size: Size) {
     let mut fraction = if duration == 0 { 0.0 } else { (state.current_time / duration as f64) as f32 };
 
     ui.horizontal(|ui| {
-        let time_label = |text: String| egui::RichText::new(text).size(theme::text::XS).color(theme::TEXT_MUTED);
+        let large = size == Size::Large;
+        let time_label = |text: String| {
+            let rich = egui::RichText::new(text);
+            if large {
+                rich.font(theme::bold(theme::text::SM)).color(theme::TEXT_MAIN)
+            } else {
+                rich.size(theme::text::XS).color(theme::TEXT_MUTED)
+            }
+        };
         ui.add_sized([TIME_W, 18.0], egui::Label::new(time_label(format_time(state.current_time as u64))));
 
         let total = duration as f32;
