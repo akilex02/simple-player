@@ -12,6 +12,15 @@ pub fn step_volume(volume: f64, delta: f64) -> f64 {
     ((volume + delta).clamp(0.0, 1.0) * 100.0).round() / 100.0
 }
 
+/// Volumen tras un movimiento de la rueda sobre el control de volumen: un paso por evento
+/// (arriba sube, abajo baja), acotado a 0..1.
+pub fn volume_after_scroll(volume: f64, scroll_y: f32) -> f64 {
+    if !scroll_y.is_finite() || scroll_y == 0.0 {
+        return volume;
+    }
+    step_volume(volume, if scroll_y > 0.0 { VOLUME_STEP } else { -VOLUME_STEP })
+}
+
 /// Cambio de un slider enfocado con las flechas (`shift` = paso grande).
 pub fn adjust_with_keys(value: f32, left: bool, right: bool, shift: bool) -> f32 {
     let step = if shift { 0.1 } else { 0.02 };
@@ -70,5 +79,28 @@ mod tests {
         assert_eq!(adjust_with_keys(0.01, true, false, false), 0.0);
         assert_eq!(adjust_with_keys(0.5, false, false, false), 0.5);
         assert_eq!(adjust_with_keys(0.5, true, true, false), 0.5);
+    }
+
+    #[test]
+    fn la_rueda_hacia_arriba_sube_el_volumen_un_paso() {
+        assert_eq!(volume_after_scroll(0.5, 50.0), 0.55);
+        assert_eq!(volume_after_scroll(0.5, 1.0), 0.55);
+    }
+
+    #[test]
+    fn la_rueda_hacia_abajo_baja_el_volumen_un_paso() {
+        assert_eq!(volume_after_scroll(0.5, -50.0), 0.45);
+    }
+
+    #[test]
+    fn la_rueda_se_acota_a_cero_y_uno() {
+        assert_eq!(volume_after_scroll(0.98, 50.0), 1.0);
+        assert_eq!(volume_after_scroll(0.02, -50.0), 0.0);
+    }
+
+    #[test]
+    fn sin_movimiento_de_rueda_el_volumen_no_cambia() {
+        assert_eq!(volume_after_scroll(0.37, 0.0), 0.37);
+        assert_eq!(volume_after_scroll(0.37, f32::NAN), 0.37);
     }
 }

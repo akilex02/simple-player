@@ -1,6 +1,7 @@
 use super::widgets::icon_button::IconButton;
 use super::widgets::slider::PillSlider;
 use super::Size;
+use crate::shortcuts::volume_after_scroll;
 use crate::state::AppState;
 use crate::theme::icons;
 use eframe::egui;
@@ -11,7 +12,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, size: Size) {
         Size::Large => 140.0,
     };
 
-    ui.horizontal_centered(|ui| {
+    let group = ui.horizontal_centered(|ui| {
         let muted = state.is_muted || state.volume == 0.0;
         let icon = if muted {
             icons::SPEAKER_X
@@ -33,4 +34,16 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, size: Size) {
             state.set_volume(vol as f64);
         }
     });
+
+    // La rueda sobre el control sube o baja el volumen (y no desplaza lo que haya detrás).
+    if ui.rect_contains_pointer(group.response.rect) {
+        let scroll = ui.input(|i| i.raw_scroll_delta.y);
+        if scroll != 0.0 {
+            state.set_volume(volume_after_scroll(state.volume, scroll));
+            ui.input_mut(|i| {
+                i.raw_scroll_delta = egui::Vec2::ZERO;
+                i.smooth_scroll_delta = egui::Vec2::ZERO;
+            });
+        }
+    }
 }
