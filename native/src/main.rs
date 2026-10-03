@@ -8,6 +8,7 @@ mod mpris;
 mod paths;
 mod perf;
 mod persistence;
+mod repaint;
 mod state;
 mod theme;
 mod ui;
@@ -164,12 +165,17 @@ impl eframe::App for App {
         self.draw(ctx);
         self.perf.show(ctx, self.viz_latency_secs * 1000.0);
         self.perf.end_frame(Instant::now());
+
+        let viz_peak = self.viz.bars.iter().cloned().fold(0.0, f32::max);
+        match repaint::decide(self.state.is_playing, viz_peak) {
+            repaint::Repaint::Now => ctx.request_repaint(),
+            repaint::Repaint::After(d) => ctx.request_repaint_after(d),
+        }
     }
 }
 
 impl App {
     fn draw(&mut self, ctx: &egui::Context) {
-        ctx.request_repaint();
         self.textures.begin_frame(ctx, 3);
 
         if let Some(hotkeys) = &self.hotkeys {
