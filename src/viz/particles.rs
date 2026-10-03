@@ -147,6 +147,15 @@ impl ParticleField {
         Self { kind, particles, bounds, rng }
     }
 
+    #[cfg(test)]
+    pub fn set_positions_for_tests(&mut self, positions: &[V2]) {
+        self.particles.truncate(positions.len());
+        for (p, pos) in self.particles.iter_mut().zip(positions) {
+            p.pos = *pos;
+            p.home = *pos;
+        }
+    }
+
     pub fn bounds(&self) -> Rect2 {
         self.bounds
     }

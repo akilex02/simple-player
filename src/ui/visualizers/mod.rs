@@ -1,4 +1,5 @@
 pub mod bars;
+pub mod particles;
 pub mod radial;
 
 use crate::viz::particles::FieldKind;
