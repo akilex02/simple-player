@@ -117,6 +117,16 @@ pub struct Particle { pub pos: (f32, f32), pub vel: (f32, f32), pub home: (f32, 
 - Topes iniciales: Partículas 1500, Constelación 600 (enlaces ≤ 2500), Anillo 360, Osciloscopio 400.
 - Cada modo se verifica con `--bench`; si alguno rebasa el presupuesto, se baja su tope antes de cerrar la tarea (se anota en el ledger).
 
+### 3.7 Benchmark de CPU y GPU
+
+Tres controles, de lo determinista a lo medido:
+
+1. **Peso del mesh (prueba unitaria, determinista):** cada modo, a su tope de partículas y con el peor caso de enlaces, genera como máximo `MAX_MESH_VERTICES = 60 000` vértices por frame (un solo `Mesh`, una sola draw call). Un test falla si algún modo lo excede. Es el control de "GPU" que corre en `cargo test`.
+2. **`--bench <s>` ampliado:** además de `CPU % | fps | ms de CPU por frame`, imprime los vértices/frame del modo activo y la **utilización de GPU** muestreada durante la ventana de medición. Fuentes, en orden: `nvidia-smi` (`utilization.gpu`, un proceso hijo con `-l 1`), `gpu_busy_percent` de sysfs (AMD) y, si no hay ninguna, `GPU n/d` (nunca falla). El muestreo vive en `src/gpu_probe.rs`, con el parseo como funciones puras con pruebas. Mide la GPU **completa** (no solo este proceso), así que se compara contra la línea base del modo Barras en la misma sesión.
+3. **`scripts/bench-visualizers.sh`:** corre `--bench` en cada modo (`--fullscreen --viz <modo> --play`), imprime una tabla y sale con error si algún modo rebasa `CPU_MAX` (por defecto 20 %, de un núcleo) o supera `GPU_MAX` (por defecto 30 % de la GPU, solo si hay lectura). Los límites se pueden pasar por variables de entorno. Si el modo Barras ya rebasa un límite en esta máquina, el límite se sube y la decisión se anota en el ledger.
+
+Si un modo rebasa, la primera palanca es bajar su tope de partículas; el valor final queda en constantes con nombre (`COUNT_*`) y en este documento.
+
 ---
 
 ## 4. Pruebas
@@ -147,6 +157,6 @@ pub struct Particle { pub pos: (f32, f32), pub vel: (f32, f32), pub home: (f32, 
 2. Los cuatro modos reaccionan al audio (graves, medios, agudos) con el acento de la portada.
 3. El Anillo está centrado en la portada, también con las letras abiertas.
 4. Clic mantenido atrae; `G` alterna atraer/repeler; el clic sobre un control no atrae.
-5. Ningún modo rebasa el presupuesto de CPU vigente; en pausa no hay repintado continuo.
+5. Ningún modo rebasa el presupuesto de CPU vigente ni los límites de `scripts/bench-visualizers.sh` (CPU y GPU), el test de peso del mesh pasa y, en pausa, no hay repintado continuo.
 6. `cargo test` en verde; sin advertencias.
 7. README actualizado (modos y tecla `G`).
