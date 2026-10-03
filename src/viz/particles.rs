@@ -1,6 +1,7 @@
 #![allow(dead_code)] // se quita al conectar el módulo (Tarea 7)
 //! Física de partículas de los visualizadores. Sin egui: se prueba sin ventana.
 use super::bands::Bands;
+use std::collections::HashMap;
 
 /// Un paso de simulación equivale a un frame a 60 Hz.
 pub const FRAME: f32 = 1.0 / 60.0;
@@ -289,6 +290,50 @@ fn bounce(p: &mut Particle, b: Rect2) {
     }
 }
 
+const LINK_ALPHA: f32 = 0.35;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Link {
+    pub a: u32,
+    pub b: u32,
+    pub alpha: f32,
+}
+
+/// Pares de partículas a menos de `max_dist`, con rejilla espacial (no es O(n²)) y a lo más `cap`.
+pub fn links(particles: &[Particle], max_dist: f32, cap: usize) -> Vec<Link> {
+    if particles.len() < 2 || max_dist <= 0.0 || cap == 0 {
+        return Vec::new();
+    }
+    let cell_of = |pos: V2| ((pos.x / max_dist).floor() as i32, (pos.y / max_dist).floor() as i32);
+    let mut grid: HashMap<(i32, i32), Vec<u32>> = HashMap::with_capacity(particles.len());
+    for (i, p) in particles.iter().enumerate() {
+        grid.entry(cell_of(p.pos)).or_default().push(i as u32);
+    }
+    let mut out = Vec::new();
+    'all: for (i, p) in particles.iter().enumerate() {
+        let (cx, cy) = cell_of(p.pos);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                let Some(bucket) = grid.get(&(cx + dx, cy + dy)) else { continue };
+                for &j in bucket {
+                    // Cada par se cuenta una vez: solo hacia índices mayores.
+                    if (j as usize) <= i {
+                        continue;
+                    }
+                    let d = p.pos.dist(particles[j as usize].pos);
+                    if d < max_dist {
+                        out.push(Link { a: i as u32, b: j, alpha: (1.0 - d / max_dist) * LINK_ALPHA });
+                        if out.len() >= cap {
+                            break 'all;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,5 +549,56 @@ mod tests {
         run(&mut field, 300, Bands::default(), Some(Pull { pos: V2::new(50.0, 50.0), attract: true }));
         run(&mut field, 3000, Bands::default(), None);
         assert!(field.particles().iter().all(|p| p.pos.dist(p.home) < 1.5));
+    }
+
+    fn particle_at(x: f32, y: f32) -> Particle {
+        Particle { pos: V2::new(x, y), vel: V2::default(), home: V2::default(), size: 2.0, tint: 0.5 }
+    }
+
+    #[test]
+    fn une_solo_los_pares_dentro_de_la_distancia() {
+        let ps = [particle_at(0.0, 0.0), particle_at(10.0, 0.0), particle_at(500.0, 500.0)];
+        let found = links(&ps, 45.0, 100);
+        assert_eq!(found.len(), 1);
+        assert_eq!((found[0].a, found[0].b), (0, 1));
+    }
+
+    #[test]
+    fn la_opacidad_baja_con_la_distancia() {
+        let near = links(&[particle_at(0.0, 0.0), particle_at(5.0, 0.0)], 45.0, 10)[0].alpha;
+        let far = links(&[particle_at(0.0, 0.0), particle_at(40.0, 0.0)], 45.0, 10)[0].alpha;
+        assert!(near > far && far > 0.0 && near <= 0.35);
+    }
+
+    #[test]
+    fn nunca_devuelve_mas_enlaces_que_el_tope() {
+        let ps: Vec<Particle> = (0..100).map(|i| particle_at(i as f32 * 0.1, 0.0)).collect();
+        assert_eq!(links(&ps, 45.0, 50).len(), 50);
+    }
+
+    #[test]
+    fn con_cero_o_una_particula_no_hay_enlaces() {
+        assert!(links(&[], 45.0, 10).is_empty());
+        assert!(links(&[particle_at(1.0, 1.0)], 45.0, 10).is_empty());
+        assert!(links(&[particle_at(0.0, 0.0), particle_at(1.0, 0.0)], 45.0, 0).is_empty());
+    }
+
+    #[test]
+    fn la_rejilla_encuentra_los_mismos_pares_que_la_fuerza_bruta() {
+        let field = ParticleField::new(FieldKind::Free, 300, Rect2::new(0.0, 0.0, 300.0, 200.0), 5);
+        let ps = field.particles();
+        let mut brute = 0;
+        for i in 0..ps.len() {
+            for j in (i + 1)..ps.len() {
+                if ps[i].pos.dist(ps[j].pos) < 45.0 {
+                    brute += 1;
+                }
+            }
+        }
+        let mut found = links(ps, 45.0, usize::MAX);
+        assert_eq!(found.len(), brute);
+        found.sort_by_key(|l| (l.a, l.b));
+        found.dedup_by_key(|l| (l.a, l.b));
+        assert_eq!(found.len(), brute, "hay pares repetidos");
     }
 }
