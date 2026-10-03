@@ -43,10 +43,6 @@ impl Backdrop {
         self.accent
     }
 
-    pub fn is_animating(&self) -> bool {
-        self.fade.is_animating()
-    }
-
     /// Avanza el crossfade y el acento hacia la carátula actual. Una vez por frame.
     pub fn update(&mut self, ctx: &egui::Context, textures: &mut TextureCache, cover: Option<&str>) {
         let dt = ctx.input(|i| i.stable_dt).min(0.1);

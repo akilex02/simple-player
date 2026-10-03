@@ -99,6 +99,7 @@ impl StatsHandle {
         self.shared.disabled.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
+    #[cfg(test)]
     pub fn is_enabled(&self) -> bool {
         self.tx.is_some()
     }

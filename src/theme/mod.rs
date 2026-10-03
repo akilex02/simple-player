@@ -12,14 +12,12 @@ pub const BG_CARD: Color32 = Color32::from_rgb(0x22, 0x22, 0x38);
 pub const BG_CARD_HOVER: Color32 = Color32::from_rgb(0x2b, 0x2b, 0x48);
 
 pub const ACCENT_PINK: Color32 = Color32::from_rgb(0xff, 0x9e, 0xbd);
-pub const ACCENT_PINK_HOVER: Color32 = Color32::from_rgb(0xff, 0x7b, 0xa4);
 pub const ACCENT_LIME: Color32 = Color32::from_rgb(0xfe, 0xf8, 0xc9);
 pub const ACCENT_PURPLE: Color32 = Color32::from_rgb(0x9d, 0x8e, 0xc4);
 pub const ACCENT_SUNSET: Color32 = Color32::from_rgb(0xff, 0xb3, 0x6b);
 
 pub const TEXT_MAIN: Color32 = Color32::from_rgb(0xff, 0xff, 0xff);
 pub const TEXT_MUTED: Color32 = Color32::from_rgb(0xb8, 0xb8, 0xd6);
-pub const BORDER_SUBTLE: Color32 = Color32::from_rgb(0x28, 0x28, 0x42);
 
 /// Opacidad (0-255) del velo oscuro sobre la carátula del fondo vivo.
 pub const BACKDROP_SCRIM_ALPHA: u8 = 200;
@@ -42,6 +40,7 @@ pub mod radius {
     pub const MD: f32 = 12.0;
     pub const LG: f32 = 16.0;
     pub const XL: f32 = 24.0;
+    #[allow(dead_code)]
     pub const PILL: f32 = 9999.0;
 }
 

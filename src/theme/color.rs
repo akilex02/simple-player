@@ -46,6 +46,7 @@ pub fn ensure_vibrant(c: Color32) -> Color32 {
 }
 
 /// Mueve `current` hacia `target` con una constante de tiempo `tau`, independiente del dt.
+#[cfg(test)]
 pub fn approach_color(current: Color32, target: Color32, dt: f32, tau: f32) -> Color32 {
     let k = 1.0 - (-dt / tau).exp();
     let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * k).round() as u8;
@@ -62,6 +63,7 @@ pub fn approach_rgb(current: [f32; 3], target: [f32; 3], dt: f32, tau: f32) -> [
 }
 
 /// Luminancia relativa WCAG de un color opaco.
+#[cfg(test)]
 pub fn relative_luminance(c: Color32) -> f32 {
     let linear = |v: u8| {
         let v = v as f32 / 255.0;
@@ -71,12 +73,14 @@ pub fn relative_luminance(c: Color32) -> f32 {
 }
 
 /// Razón de contraste WCAG (1.0 a 21.0) entre dos colores opacos.
+#[cfg(test)]
 pub fn contrast_ratio(a: Color32, b: Color32) -> f32 {
     let (la, lb) = (relative_luminance(a), relative_luminance(b));
     (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
 }
 
 /// `fg` (con su alfa) compuesto sobre un `bg` opaco.
+#[cfg(test)]
 pub fn over(fg: Color32, bg: Color32) -> Color32 {
     let [r, g, b, a] = fg.to_srgba_unmultiplied();
     let k = a as f32 / 255.0;

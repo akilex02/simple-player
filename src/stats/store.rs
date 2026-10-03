@@ -117,6 +117,7 @@ impl Store {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn count(&self) -> StoreResult<u64> {
         Ok(self.conn.query_row("SELECT COUNT(*) FROM play_events", [], |r| r.get::<_, i64>(0))? as u64)
     }

@@ -34,10 +34,6 @@ impl StatsRecorder {
         self.song_started_at(song, playing, Instant::now(), epoch_ms_now());
     }
 
-    pub fn observe(&mut self, playing: bool) {
-        self.observe_at(playing, Instant::now(), epoch_ms_now());
-    }
-
     pub fn finish(&mut self) {
         self.finish_at(Instant::now(), epoch_ms_now());
     }
