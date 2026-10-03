@@ -535,7 +535,6 @@ impl AppState {
     }
 
     /// Aplica un cambio a los ajustes y lo guarda.
-    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 7)
     pub fn update_settings(&mut self, change: impl FnOnce(&mut Settings)) {
         change(&mut self.settings);
         self.save_settings();

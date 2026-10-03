@@ -1,12 +1,15 @@
 //! Pantalla de Configuración: carpetas de música, preferencias, datos y acerca de.
 use crate::paths::get_covers_dir;
 use crate::state::AppState;
+use crate::ui::visualizers::VisualizerMode;
+use crate::ui::widgets::chip::chip;
+use crate::ui::widgets::toggle::toggle;
 use crate::theme::{self, icons, radius, space, text};
 use crate::ui::widgets::glass::{glass_panel, GlassKind};
 use crate::ui::widgets::icon_button::IconButton;
 use crate::ui::widgets::pill_button::{PillButton, PillKind};
 use eframe::egui::{self, RichText};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const GAP: f32 = 16.0;
 
@@ -99,6 +102,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
         ui.add_space(space::LG);
         library_section(ui, state);
         ui.add_space(GAP);
+        appearance_section(ui, state);
+        ui.add_space(GAP);
+        about_section(ui);
+        ui.add_space(GAP);
     });
 
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("settings_ui"), view));
@@ -137,6 +144,88 @@ fn covers_cache_size(ui: &egui::Ui) -> u64 {
     let size = dir_size(&get_covers_dir());
     ui.ctx().data_mut(|d| d.insert_temp(id, (now, size)));
     size
+}
+
+pub fn visualizer_options() -> [VisualizerMode; 7] {
+    let mut modes = [VisualizerMode::Bars; 7];
+    for i in 1..7 {
+        modes[i] = modes[i - 1].next();
+    }
+    modes
+}
+
+pub struct DataDirs {
+    pub settings: PathBuf,
+    pub stats: PathBuf,
+    pub cache: PathBuf,
+}
+
+/// Carpetas donde la app guarda sus datos (para mostrarlas y abrirlas).
+pub fn data_dirs(xdg_config: Option<&str>, xdg_data: Option<&str>, home: Option<&str>) -> DataDirs {
+    let parent = |p: PathBuf| p.parent().map(Path::to_path_buf).unwrap_or(p);
+    DataDirs {
+        settings: parent(crate::settings::settings_path(xdg_config, home)),
+        stats: parent(crate::stats::location::default_db_path(xdg_data, home)),
+        cache: crate::paths::get_cache_dir(),
+    }
+}
+
+/// Abre una carpeta con el explorador del sistema; si falla no pasa nada.
+fn open_folder(path: &Path) {
+    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+}
+
+fn appearance_section(ui: &mut egui::Ui, state: &mut AppState) {
+    section(ui, "APARIENCIA Y VENTANA", |ui| {
+        ui.label(RichText::new("Visualizador por defecto").font(theme::bold(text::BASE)));
+        ui.label(
+            RichText::new("Con el que abre la pantalla completa. Cambiar de modo allí no modifica este valor.")
+                .size(text::SM)
+                .color(theme::TEXT_MUTED),
+        );
+        ui.add_space(space::SM);
+        let current = state.settings.visualizer_mode();
+        let mut picked = None;
+        ui.horizontal_wrapped(|ui| {
+            for mode in visualizer_options() {
+                if chip(ui, mode.label(), mode == current).clicked() {
+                    picked = Some(mode);
+                }
+            }
+        });
+        if let Some(mode) = picked {
+            state.update_settings(|s| s.default_visualizer = mode.label().to_string());
+        }
+
+        ui.add_space(space::LG);
+        let mut remember = state.settings.remember_window_size;
+        row(ui, "Recordar el tamaño de la ventana", "Se aplica la próxima vez que abras la app.", |ui| {
+            toggle(ui, &mut remember);
+        });
+        if remember != state.settings.remember_window_size {
+            state.update_settings(|s| s.remember_window_size = remember);
+        }
+    });
+}
+
+fn about_section(ui: &mut egui::Ui) {
+    section(ui, "ACERCA DE", |ui| {
+        ui.label(RichText::new(format!("Simple Player {}", env!("CARGO_PKG_VERSION"))).font(theme::bold(text::BASE)));
+        ui.add_space(space::SM);
+        let dirs = data_dirs(
+            std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+            std::env::var("XDG_DATA_HOME").ok().as_deref(),
+            std::env::var("HOME").ok().as_deref(),
+        );
+        for (label, dir) in [("Ajustes", &dirs.settings), ("Estadísticas", &dirs.stats), ("Caché", &dirs.cache)] {
+            row(ui, label, &dir.display().to_string(), |ui| {
+                if PillButton::new("Abrir carpeta", PillKind::Ghost).icon(icons::FOLDER_OPEN).show(ui).clicked() {
+                    open_folder(dir);
+                }
+            });
+            ui.add_space(space::XS);
+        }
+    });
 }
 
 fn library_section(ui: &mut egui::Ui, state: &mut AppState) {
@@ -262,5 +351,21 @@ mod tests {
         ui.confirm = Some(Confirm::FactoryReset);
         ui.begin_frame(1);
         assert_eq!(ui.confirm, None);
+    }
+
+    #[test]
+    fn el_selector_ofrece_los_siete_modos_en_el_orden_del_ciclo() {
+        let labels: Vec<&str> = visualizer_options().iter().map(|m| m.label()).collect();
+        assert_eq!(labels, ["Barras", "Anillo", "Partículas", "Constelación", "Osciloscopio", "Franja", "Apagado"]);
+    }
+
+    #[test]
+    fn las_carpetas_de_datos_respetan_xdg() {
+        let d = data_dirs(Some("/cfg"), Some("/data"), Some("/home/u"));
+        assert_eq!(d.settings, std::path::PathBuf::from("/cfg/simple-player"));
+        assert_eq!(d.stats, std::path::PathBuf::from("/data/simple-player"));
+        let d = data_dirs(None, None, Some("/home/u"));
+        assert_eq!(d.settings, std::path::PathBuf::from("/home/u/.config/simple-player"));
+        assert_eq!(d.stats, std::path::PathBuf::from("/home/u/.local/share/simple-player"));
     }
 }
