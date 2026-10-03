@@ -10,6 +10,7 @@ mod persistence;
 mod state;
 mod theme;
 mod ui;
+mod viz;
 
 use eframe::egui;
 use events::AppEvent;
