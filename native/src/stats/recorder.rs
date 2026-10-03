@@ -21,6 +21,11 @@ impl StatsRecorder {
         Self { tracker: SessionTracker::new(), handle }
     }
 
+    /// ¿Hay una sesión abierta? Falta cuando suena la cola restaurada al arrancar sin pasar por `play_index`.
+    pub fn has_session(&self) -> bool {
+        self.tracker.is_active()
+    }
+
     pub fn handle(&self) -> &StatsHandle {
         &self.handle
     }

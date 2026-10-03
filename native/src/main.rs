@@ -349,7 +349,7 @@ impl App {
         let tick_start = Instant::now();
         self.state.tick();
         self.perf.record_tick(tick_start.elapsed());
-        self.state.stats.observe(self.state.is_playing);
+        self.state.observe_stats();
         self.update_viz();
         self.state.ensure_lyrics_for_current_song();
 

@@ -587,6 +587,21 @@ impl AppState {
     /// + una consulta a GStreamer — barato de llamar cada frame. Esto hace
     /// que el resaltado de la línea de letra activa sea fluido en vez de
     /// actualizarse a saltos de 500ms.
+    /// Alimenta las estadísticas cada frame. Si suena una canción sin sesión
+    /// (la cola restaurada al arrancar, MPRIS, teclas multimedia) la abre aquí.
+    pub fn observe_stats_at(&mut self, now: Instant, epoch_ms: i64) {
+        if self.is_playing && !self.stats.has_session() {
+            if let Some(song) = self.current_song().map(SongSnapshot::from) {
+                self.stats.song_started_at(song, true, now, epoch_ms);
+            }
+        }
+        self.stats.observe_at(self.is_playing, now, epoch_ms);
+    }
+
+    pub fn observe_stats(&mut self) {
+        self.observe_stats_at(Instant::now(), crate::stats::recorder::epoch_ms_now());
+    }
+
     pub fn tick(&mut self) {
         if !self.is_playing || self.is_dragging_seek {
             return;
@@ -601,5 +616,67 @@ impl AppState {
                 self.handle_auto_next_song();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stats::location::StatsLocation;
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    const E0: i64 = 1_700_000_000_000;
+
+    fn state() -> AppState {
+        gstreamer::init().unwrap();
+        let player = gstreamer_player::Player::new(
+            None::<gstreamer_player::PlayerVideoRenderer>,
+            None::<gstreamer_player::PlayerSignalDispatcher>,
+        );
+        let audio = AudioPlayer { inner: Arc::new(Mutex::new(player)) };
+        let (tx, _rx) = std::sync::mpsc::sync_channel(4);
+        let mut s = AppState::new(audio, tx);
+        s.stats = StatsRecorder::new(StatsHandle::spawn(StatsLocation::Memory, Arc::new(|| {})));
+        s.active_queue = vec![Song {
+            path: "/m/restaurada.mp3".into(),
+            title: "Restaurada".into(),
+            artist: "A".into(),
+            album: "B".into(),
+            duration_secs: 200,
+            cover_art: None,
+        }];
+        s.current_song_index = Some(0);
+        s
+    }
+
+    fn plays(s: &AppState) -> u32 {
+        let h = s.stats.handle().clone();
+        h.request_summary(StatsRange::All);
+        h.flush(Duration::from_secs(2));
+        h.latest_summary().map(|(_, summary)| summary.totals.plays).unwrap_or(0)
+    }
+
+    #[test]
+    fn la_cancion_restaurada_al_arrancar_se_registra_al_pulsar_play() {
+        // `init` restaura la cola sin sonar; play reanuda sin pasar por `play_index`.
+        let mut s = state();
+        s.is_playing = true;
+        let t0 = Instant::now();
+        s.observe_stats_at(t0, E0);
+        s.observe_stats_at(t0 + Duration::from_secs(8), E0 + 8_000);
+        s.stats.finish_at(t0 + Duration::from_secs(8), E0 + 8_000);
+        assert_eq!(plays(&s), 1);
+    }
+
+    #[test]
+    fn en_pausa_no_se_abre_ninguna_sesion() {
+        let mut s = state();
+        s.is_playing = false;
+        let t0 = Instant::now();
+        s.observe_stats_at(t0, E0);
+        s.observe_stats_at(t0 + Duration::from_secs(30), E0 + 30_000);
+        s.stats.finish_at(t0 + Duration::from_secs(30), E0 + 30_000);
+        assert_eq!(plays(&s), 0);
     }
 }

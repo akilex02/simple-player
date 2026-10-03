@@ -12,9 +12,13 @@ pub struct RangeBounds {
 /// Hueco máximo entre dos reproducciones para que sigan en la misma sesión.
 pub const SESSION_GAP_MS: i64 = 30 * 60 * 1000;
 
+/// Inicio del día local. Si el cambio de horario se come la medianoche, el día
+/// empieza en la primera hora que sí existe (si no, el rango se volvería "todo").
 fn day_start_ms<Tz: TimeZone>(tz: &Tz, date: NaiveDate) -> Option<i64> {
-    let naive = date.and_hms_opt(0, 0, 0)?;
-    tz.from_local_datetime(&naive).earliest().map(|d| d.timestamp_millis())
+    (0..=3).find_map(|hour| {
+        let naive = date.and_hms_opt(hour, 0, 0)?;
+        tz.from_local_datetime(&naive).earliest().map(|d| d.timestamp_millis())
+    })
 }
 
 fn date_of<Tz: TimeZone>(tz: &Tz, ms: i64) -> Option<NaiveDate> {
@@ -429,5 +433,62 @@ mod tests {
         assert_eq!(buckets[0].listened_ms, 60_000);
         let (week, _) = timeline(&rows, StatsRange::Week, &now(), None);
         assert_eq!(week[5].listened_ms, 60_000); // sábado, no viernes
+    }
+
+    // ── medianoche inexistente (cambio de horario) ─────────────────────────
+    use chrono::{Duration as ChronoDuration, LocalResult, NaiveDate, NaiveDateTime, Utc};
+
+    /// UTC−4 hasta el 2026-10-03 00:00 local, cuando los relojes saltan a 01:00 (UTC−3):
+    /// la medianoche de ese día no existe.
+    #[derive(Clone, Copy, Debug)]
+    struct GapZone;
+
+    impl GapZone {
+        fn gap_start() -> NaiveDateTime {
+            NaiveDate::from_ymd_opt(2026, 10, 3).unwrap().and_hms_opt(0, 0, 0).unwrap()
+        }
+    }
+
+    impl TimeZone for GapZone {
+        type Offset = FixedOffset;
+
+        fn from_offset(_: &FixedOffset) -> Self {
+            GapZone
+        }
+
+        fn offset_from_local_date(&self, date: &NaiveDate) -> LocalResult<FixedOffset> {
+            self.offset_from_local_datetime(&date.and_hms_opt(12, 0, 0).unwrap())
+        }
+
+        fn offset_from_local_datetime(&self, local: &NaiveDateTime) -> LocalResult<FixedOffset> {
+            let gap_end = Self::gap_start() + ChronoDuration::hours(1);
+            if *local < Self::gap_start() {
+                LocalResult::Single(FixedOffset::west_opt(4 * 3600).unwrap())
+            } else if *local < gap_end {
+                LocalResult::None
+            } else {
+                LocalResult::Single(FixedOffset::west_opt(3 * 3600).unwrap())
+            }
+        }
+
+        fn offset_from_utc_date(&self, utc: &NaiveDate) -> FixedOffset {
+            self.offset_from_utc_datetime(&utc.and_hms_opt(12, 0, 0).unwrap())
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> FixedOffset {
+            let transition = NaiveDate::from_ymd_opt(2026, 10, 3).unwrap().and_hms_opt(4, 0, 0).unwrap();
+            FixedOffset::west_opt(if *utc >= transition { 3 } else { 4 } * 3600).unwrap()
+        }
+    }
+
+    #[test]
+    fn si_la_medianoche_no_existe_el_dia_empieza_en_la_primera_hora_valida() {
+        let now = GapZone.timestamp_millis_opt(Utc.with_ymd_and_hms(2026, 10, 3, 18, 0, 0).unwrap().timestamp_millis()).unwrap();
+        let first_valid_instant = Utc.with_ymd_and_hms(2026, 10, 3, 4, 0, 0).unwrap().timestamp_millis(); // 01:00 local
+        assert_eq!(range_bounds(StatsRange::Today, &now).start_ms, Some(first_valid_instant));
+        // un rango acotado nunca debe degradarse a "sin límite"
+        for range in [StatsRange::Today, StatsRange::Week, StatsRange::Month, StatsRange::Year] {
+            assert!(range_bounds(range, &now).start_ms.is_some(), "{range:?}");
+        }
     }
 }

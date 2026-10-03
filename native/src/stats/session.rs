@@ -24,6 +24,10 @@ impl SessionTracker {
         Self { active: None }
     }
 
+    pub fn is_active(&self) -> bool {
+        self.active.is_some()
+    }
+
     pub fn start(&mut self, song: SongSnapshot, now: Instant, epoch_ms: i64, playing: bool) -> Option<PlayEvent> {
         let previous = self.finish(now, epoch_ms);
         self.active = Some(Active {
