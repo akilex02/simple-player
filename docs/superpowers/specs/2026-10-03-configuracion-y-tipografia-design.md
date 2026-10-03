@@ -1,6 +1,6 @@
 # Simple Player — Configuración y tipografía unificada
 
-> **Estado:** diseño aprobado; pendiente de plan e implementación.
+> **Estado:** implementado en `nueva-version`; falta la aceptación manual del usuario (criterios 1, 3, 5 y 6 con la app normal).
 > **Rama de trabajo:** `nueva-version`.
 > **Fecha:** 2026-10-03
 
