@@ -13,6 +13,13 @@ const BAND_FLOOR: f32 = 0.02;
 const DRIFT: f32 = 0.15;
 const SHAKE: f32 = 1.5;
 const JITTER: f32 = 0.6;
+const THERMAL: f32 = 0.04;
+const BASS_PUSH: f32 = 0.2;
+/// El spec decía 0.5 (valor del original con teclas de ajuste); a ese valor casi no se nota.
+const PULL_G: f32 = 1.5;
+const PULL_MIN_DIST: f32 = 25.0;
+const SPRING_HELD: f32 = 0.005;
+const SPRING_SNAP: f32 = 0.055;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct V2 {
@@ -159,11 +166,13 @@ impl ParticleField {
     }
 
     /// Avanza la simulación `dt` segundos (acotado a tres pasos de 1/60 s).
-    pub fn step(&mut self, dt: f32, bands: Bands, _anchor: Anchor, pull: Option<Pull>, _time: f32) {
+    pub fn step(&mut self, dt: f32, bands: Bands, anchor: Anchor, pull: Option<Pull>, time: f32) {
         if !dt.is_finite() || dt <= 0.0 {
             return;
         }
         let k = (dt / FRAME).min(MAX_STEPS);
+        self.update_homes(bands, anchor, time);
+        let spring = spring_constant(pull.is_some());
         let damping = FRICTION.powf(k);
         let (bounds, kind) = (self.bounds, self.kind);
         for p in &mut self.particles {
@@ -172,10 +181,23 @@ impl ParticleField {
             p.vel.x *= damping;
             p.vel.y *= damping;
 
-            if kind == FieldKind::Free && pull.is_none() && bands.bass > BAND_FLOOR {
-                let drift = bands.bass * DRIFT * k;
-                p.vel.x += self.rng.signed(drift);
-                p.vel.y += self.rng.signed(drift);
+            match kind {
+                FieldKind::Free => {
+                    if pull.is_none() && bands.bass > BAND_FLOOR {
+                        let drift = bands.bass * DRIFT * k;
+                        p.vel.x += self.rng.signed(drift);
+                        p.vel.y += self.rng.signed(drift);
+                    }
+                }
+                FieldKind::Ring | FieldKind::Wave => {
+                    p.vel.x += (p.home.x - p.pos.x) * spring * k;
+                    p.vel.y += (p.home.y - p.pos.y) * spring * k;
+                    if bands.bass > BAND_FLOOR {
+                        let thermal = bands.bass * THERMAL * k;
+                        p.vel.x += self.rng.signed(thermal);
+                        p.vel.y += self.rng.signed(thermal);
+                    }
+                }
             }
             if bands.mid > BAND_FLOOR {
                 let shake = bands.mid * SHAKE * k;
@@ -187,11 +209,67 @@ impl ParticleField {
                 p.vel.x += self.rng.signed(jitter);
                 p.vel.y += self.rng.signed(jitter);
             }
+            if let Some(pull) = pull {
+                apply_pull(p, pull, bands.bass, k);
+            }
             if kind == FieldKind::Free || pull.is_some() {
                 bounce(p, bounds);
             }
         }
     }
+
+    /// Recalcula los destinos del resorte (Anillo y Osciloscopio).
+    fn update_homes(&mut self, bands: Bands, anchor: Anchor, time: f32) {
+        use std::f32::consts::TAU;
+        let n = self.particles.len();
+        match self.kind {
+            FieldKind::Free => {}
+            FieldKind::Ring => {
+                let base = anchor.radius * 1.15 + 12.0;
+                for (i, p) in self.particles.iter_mut().enumerate() {
+                    let angle = i as f32 / n as f32 * TAU;
+                    // Onda viajera de medios y chispas de agudos solo cada 11.ª partícula.
+                    let wave = (angle * 6.0 - time * 6.0).cos() * bands.mid * anchor.radius * 0.10;
+                    let spark = if i % 11 == 0 { bands.high * anchor.radius * 0.30 } else { 0.0 };
+                    let r = base + bands.bass * anchor.radius * 0.35 + wave + spark;
+                    p.home = V2::new(anchor.center.x + angle.cos() * r, anchor.center.y + angle.sin() * r);
+                }
+            }
+            FieldKind::Wave => {
+                let (w, h) = (self.bounds.width(), self.bounds.height());
+                let center_y = self.bounds.center().y;
+                let amp = h * 0.04 + bands.mid * h * 0.10 + bands.bass * h * 0.07;
+                for i in 0..n {
+                    let ratio = i as f32 / (n.max(2) - 1) as f32;
+                    let wave1 = (ratio * TAU * 3.0 + time * 5.0).sin();
+                    let wave2 = (ratio * TAU * 10.0 - time * 10.0).cos() * 0.25;
+                    // Jitter de agudos en cada 7.ª partícula.
+                    let jitter = if i % 7 == 0 { self.rng.signed(1.0) * bands.high * h * 0.02 } else { 0.0 };
+                    self.particles[i].home = V2::new(self.bounds.min.x + ratio * w, center_y + (wave1 + wave2) * amp + jitter);
+                }
+            }
+        }
+    }
+}
+
+/// Resorte hacia el destino: flojo mientras se mantiene el clic (se siente elástico) y firme al soltar.
+fn spring_constant(has_pull: bool) -> f32 {
+    if has_pull { SPRING_HELD } else { SPRING_SNAP }
+}
+
+fn apply_pull(p: &mut Particle, pull: Pull, bass: f32, k: f32) {
+    let dx = pull.pos.x - p.pos.x;
+    let dy = pull.pos.y - p.pos.y;
+    let dist = dx.hypot(dy);
+    if dist <= 2.0 {
+        return;
+    }
+    let direction = if pull.attract { 1.0 } else { -1.0 };
+    // Los graves empujan hacia afuera: las partículas "laten" alrededor del cursor.
+    let bass_push = if bass > 0.15 { -bass * BASS_PUSH } else { 0.0 };
+    let force = direction * PULL_G / dist.max(PULL_MIN_DIST) + bass_push;
+    p.vel.x += dx / dist * force * k;
+    p.vel.y += dy / dist * force * k;
 }
 
 fn bounce(p: &mut Particle, b: Rect2) {
@@ -330,5 +408,101 @@ mod tests {
         assert_eq!(field.particles().len(), 200);
         assert!(field.particles().iter().all(|p| inside(p, smaller)));
         assert_eq!(field.bounds(), smaller);
+    }
+
+    fn mean_radius(field: &ParticleField) -> f32 {
+        let c = anchor().center;
+        field.particles().iter().map(|p| p.pos.dist(c)).sum::<f32>() / field.particles().len() as f32
+    }
+
+    fn max_deviation_from_center_y(field: &ParticleField) -> f32 {
+        field.particles().iter().map(|p| (p.pos.y - 300.0).abs()).fold(0.0, f32::max)
+    }
+
+    #[test]
+    fn atraer_acerca_la_particula_al_cursor() {
+        let mut field = single(FieldKind::Free, V2::new(300.0, 300.0));
+        let pull = Pull { pos: V2::new(500.0, 300.0), attract: true };
+        run(&mut field, 120, Bands::default(), Some(pull));
+        assert!(field.particles()[0].pos.x > 305.0, "x = {}", field.particles()[0].pos.x);
+    }
+
+    #[test]
+    fn repeler_aleja_la_particula_del_cursor() {
+        let mut field = single(FieldKind::Free, V2::new(300.0, 300.0));
+        let pull = Pull { pos: V2::new(500.0, 300.0), attract: false };
+        run(&mut field, 120, Bands::default(), Some(pull));
+        assert!(field.particles()[0].pos.x < 295.0, "x = {}", field.particles()[0].pos.x);
+    }
+
+    #[test]
+    fn el_cursor_justo_sobre_la_particula_no_produce_nan() {
+        let pos = V2::new(500.0, 300.0);
+        let mut field = single(FieldKind::Free, pos);
+        run(&mut field, 10, loud(), Some(Pull { pos, attract: true }));
+        let p = field.particles()[0];
+        assert!(p.pos.x.is_finite() && p.pos.y.is_finite() && p.vel.x.is_finite() && p.vel.y.is_finite());
+    }
+
+    #[test]
+    fn el_resorte_es_mas_debil_mientras_hay_clic() {
+        assert!(spring_constant(true) < spring_constant(false));
+    }
+
+    #[test]
+    fn el_anillo_sin_audio_converge_a_un_aro_alrededor_de_la_portada() {
+        let mut field = ParticleField::new(FieldKind::Ring, 360, bounds(), 3);
+        run(&mut field, 3000, Bands::default(), None);
+        let expected = 100.0 * 1.15 + 12.0;
+        for p in field.particles() {
+            assert!(p.pos.dist(p.home) < 1.0, "lejos de su destino: {}", p.pos.dist(p.home));
+            assert!((p.pos.dist(anchor().center) - expected).abs() < 1.5);
+        }
+    }
+
+    #[test]
+    fn el_anillo_crece_con_los_graves() {
+        let mut quiet = ParticleField::new(FieldKind::Ring, 360, bounds(), 3);
+        let mut bassy = ParticleField::new(FieldKind::Ring, 360, bounds(), 3);
+        run(&mut quiet, 3000, Bands::default(), None);
+        run(&mut bassy, 3000, Bands { bass: 1.0, mid: 0.0, high: 0.0 }, None);
+        assert!(mean_radius(&bassy) > mean_radius(&quiet) + 20.0);
+    }
+
+    #[test]
+    fn el_anillo_con_portada_de_radio_cero_no_produce_nan() {
+        let mut field = ParticleField::new(FieldKind::Ring, 120, bounds(), 3);
+        let flat = Anchor { center: V2::new(500.0, 300.0), radius: 0.0 };
+        for _ in 0..200 {
+            field.step(FRAME, loud(), flat, None, 0.0);
+        }
+        assert!(field.particles().iter().all(|p| p.pos.x.is_finite() && p.pos.y.is_finite()));
+    }
+
+    #[test]
+    fn el_osciloscopio_sin_audio_converge_y_cubre_todo_el_ancho() {
+        let mut field = ParticleField::new(FieldKind::Wave, 400, bounds(), 3);
+        run(&mut field, 3000, Bands::default(), None);
+        assert!(field.particles().iter().all(|p| p.pos.dist(p.home) < 1.0));
+        let min_x = field.particles().iter().map(|p| p.pos.x).fold(f32::MAX, f32::min);
+        let max_x = field.particles().iter().map(|p| p.pos.x).fold(f32::MIN, f32::max);
+        assert!(min_x < 5.0 && max_x > 995.0, "x de {min_x} a {max_x}");
+    }
+
+    #[test]
+    fn el_osciloscopio_crece_con_los_medios() {
+        let mut quiet = ParticleField::new(FieldKind::Wave, 400, bounds(), 3);
+        let mut mids = ParticleField::new(FieldKind::Wave, 400, bounds(), 3);
+        run(&mut quiet, 3000, Bands::default(), None);
+        run(&mut mids, 3000, Bands { bass: 0.0, mid: 1.0, high: 0.0 }, None);
+        assert!(max_deviation_from_center_y(&mids) > max_deviation_from_center_y(&quiet) + 20.0);
+    }
+
+    #[test]
+    fn al_soltar_el_clic_el_anillo_vuelve_a_su_destino() {
+        let mut field = ParticleField::new(FieldKind::Ring, 360, bounds(), 3);
+        run(&mut field, 300, Bands::default(), Some(Pull { pos: V2::new(50.0, 50.0), attract: true }));
+        run(&mut field, 3000, Bands::default(), None);
+        assert!(field.particles().iter().all(|p| p.pos.dist(p.home) < 1.5));
     }
 }

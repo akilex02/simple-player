@@ -86,7 +86,7 @@ pub struct Particle { pub pos: (f32, f32), pub vel: (f32, f32), pub home: (f32, 
 - **Ring:** destino sobre un círculo, `home = center + (cosθ, sinθ)·r`, con `r = base + bass·B + onda + chispa`, donde la onda es `cos(6θ − 6t)·mid·W` y la chispa solo cada 11.ª partícula (`high·S`). `base` se calcula a partir del radio de la portada. Resorte hacia `home` con `k = 0.055`.
 - **Wave:** destino `x = i/n·ancho`, `y = centro + (sin(3τ·x + 5t) + 0.25·cos(10τ·x − 10t))·amp`, con `amp = 30 + mid·14 + bass·9` (escalado al alto de la ventana) y jitter de agudos en cada 7.ª partícula. Resorte con `k = 0.055`.
 - **Todos:** los medios sacuden la posición (`mid·0.45`) y los agudos agregan jitter de velocidad (`high·0.12`) cuando superan 0.05.
-- **Atracción:** con `Pull`, fuerza `±g/max(dist, 25)` hacia el cursor (`g = 0.5`); los graves aportan un empuje radial opuesto (`−bass·0.035`). En Ring y Wave el resorte baja a `k = 0.005` mientras hay `Pull` (se siente elástico) y vuelve a `0.055` al soltar.
+- **Atracción:** con `Pull`, fuerza `±g/max(dist, 25)` hacia el cursor (`g = 1.5` (el original usaba 0.5 con teclas de ajuste y a ese valor casi no se nota)); los graves aportan un empuje radial opuesto (`−bass·0.035`). En Ring y Wave el resorte baja a `k = 0.005` mientras hay `Pull` (se siente elástico) y vuelve a `0.055` al soltar.
 
 **Constelación (enlaces):** función pura `links(particles, max_dist, cap) -> Vec<(u32, u32, f32)>` con rejilla espacial (celdas de lado `max_dist`); solo mira celdas vecinas, devuelve a lo sumo `cap` enlaces con su opacidad `(1 − d/max_dist)·0.35`. `max_dist = 45 + bass·6` (el original usaba 45 + bass·2 en unidades distintas).
 
