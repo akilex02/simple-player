@@ -8,7 +8,7 @@ Un reproductor de música local para Linux, rápido y con estética "liquid-glas
 - **Reproducción:** motor GStreamer (MP3, FLAC, AAC, WAV…), seek preciso, aleatorio, repetir, cola visible y control de volumen.
 - **Pantalla completa "Ahora suena":** portada grande, fondo desenfocado que sigue a la carátula y acento dinámico.
 - **Letras sincronizadas:** desde un `.lrc` junto a la canción o las etiquetas del archivo; la línea activa se resalta y un clic en una línea salta a ese momento.
-- **Visualizador de espectro:** barras, radial, resplandor o franja inferior, alineado con el reloj de reproducción.
+- **Visualizador de espectro:** barras, radial (alrededor de la portada) o franja inferior, alineado con el reloj de reproducción.
 - **Estadísticas de escucha:** tiempo total, reproducciones, tops de canciones, artistas y álbumes, días activos, rachas, sesiones y línea de tiempo por rango (hoy, semana, mes, año, todo).
 - **Integración con el escritorio:** MPRIS2 (teclas multimedia y controles del sistema) y atajos globales.
 - **Ligero:** en reposo consume ~0.2 % de CPU; el repintado continuo solo ocurre mientras suena música.
