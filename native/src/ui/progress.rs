@@ -1,31 +1,39 @@
+use super::widgets::slider::PillSlider;
 use super::{format_time, Size};
 use crate::state::AppState;
+use crate::theme;
 use eframe::egui;
+
+const TIME_W: f32 = 44.0;
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, size: Size) {
     let duration = state.current_song().map(|s| s.duration_secs).unwrap_or(0);
-    let mut value = state.current_time as f32;
-    let slider_width = match size {
-        Size::Compact => 420.0,
-        Size::Large => 620.0,
+    let max_width = match size {
+        Size::Compact => 640.0,
+        Size::Large => 760.0,
     };
+    let slider_w = (ui.available_width() - 2.0 * (TIME_W + ui.spacing().item_spacing.x)).clamp(80.0, max_width);
+    let mut fraction = if duration == 0 { 0.0 } else { (state.current_time / duration as f64) as f32 };
 
     ui.horizontal(|ui| {
-        ui.label(format_time(state.current_time as u64));
+        let time_label = |text: String| egui::RichText::new(text).size(theme::text::XS).color(theme::TEXT_MUTED);
+        ui.add_sized([TIME_W, 18.0], egui::Label::new(time_label(format_time(state.current_time as u64))));
 
-        let slider = egui::Slider::new(&mut value, 0.0..=(duration.max(1) as f32)).show_value(false);
-        let response = ui.add_sized([slider_width, 18.0], slider);
+        let total = duration as f32;
+        let response = PillSlider::new(&mut fraction, slider_w)
+            .tooltip(move |v| format_time((v * total) as u64))
+            .show(ui);
 
         if response.drag_started() {
             state.is_dragging_seek = true;
         }
         if response.changed() {
-            state.current_time = value as f64;
+            state.current_time = (fraction * total) as f64;
         }
-        if response.drag_stopped() {
-            state.seek_commit(value as f64);
+        if response.drag_stopped() || (response.clicked() && !response.dragged()) {
+            state.seek_commit((fraction * total) as f64);
         }
 
-        ui.label(format_time(duration));
+        ui.add_sized([TIME_W, 18.0], egui::Label::new(time_label(format_time(duration))));
     });
 }

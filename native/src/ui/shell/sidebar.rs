@@ -1,0 +1,49 @@
+use crate::state::{ActiveTab, AppState};
+use crate::theme::{self, icons, space, text};
+use crate::ui::widgets::nav_item::nav_item;
+use crate::ui::widgets::pill_button::{PillButton, PillKind};
+use eframe::egui::{self, RichText};
+
+pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
+    let accent = theme::accent(ui.ctx());
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(icons::DISC).size(text::XL + 4.0).color(accent));
+        ui.label(RichText::new("SIMPLE PLAYER").font(theme::deco(text::XL)).color(theme::TEXT_MAIN));
+    });
+
+    ui.add_space(space::XXL);
+    section_label(ui, "BIBLIOTECA");
+    for (icon, label, tab) in [
+        (icons::MUSIC_NOTES, "Canciones", ActiveTab::All),
+        (icons::DISC, "Álbumes", ActiveTab::Albums),
+        (icons::USER, "Artistas", ActiveTab::Artists),
+    ] {
+        if nav_item(ui, icon, label, state.active_tab == tab).clicked() {
+            state.select_tab(tab);
+        }
+        ui.add_space(space::XS);
+    }
+
+    ui.add_space(space::XL);
+    section_label(ui, "CARPETA");
+    if let Some(path) = &state.current_folder_path {
+        let name = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(icons::FOLDER_OPEN).size(text::LG).color(theme::TEXT_MUTED));
+            ui.add(egui::Label::new(RichText::new(name).color(theme::TEXT_MAIN)).truncate()).on_hover_text(path);
+        });
+        ui.add_space(space::SM);
+    }
+    let label = if state.current_folder_path.is_some() { "Cambiar carpeta" } else { "Abrir carpeta" };
+    ui.add_enabled_ui(!state.loading, |ui| {
+        if PillButton::new(label, PillKind::Secondary).icon(icons::FOLDER_OPEN).show(ui).clicked() {
+            state.select_folder_and_scan();
+        }
+    });
+}
+
+fn section_label(ui: &mut egui::Ui, label: &str) {
+    ui.label(RichText::new(label).font(theme::bold(text::XS)).color(theme::TEXT_MUTED));
+    ui.add_space(space::SM);
+}

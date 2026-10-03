@@ -9,13 +9,13 @@ pub struct IconButton<'a> {
     size: f32,
     active: bool,
     primary: bool,
-    accent: Color32,
+    accent: Option<Color32>,
     tooltip: Option<&'a str>,
 }
 
 impl<'a> IconButton<'a> {
     pub fn new(icon: &'a str, size: f32) -> Self {
-        Self { icon, size, active: false, primary: false, accent: theme::ACCENT_PINK, tooltip: None }
+        Self { icon, size, active: false, primary: false, accent: None, tooltip: None }
     }
 
     /// Encendido (shuffle activo, letras visibles…): ícono en color de acento.
@@ -31,7 +31,7 @@ impl<'a> IconButton<'a> {
     }
 
     pub fn accent(mut self, accent: Color32) -> Self {
-        self.accent = accent;
+        self.accent = Some(accent);
         self
     }
 
@@ -41,6 +41,7 @@ impl<'a> IconButton<'a> {
     }
 
     pub fn show(self, ui: &mut egui::Ui) -> egui::Response {
+        let accent = self.accent.unwrap_or_else(|| theme::accent(ui.ctx()));
         let (rect, mut response) = ui.allocate_exact_size(egui::vec2(self.size, self.size), egui::Sense::click());
         response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
         if let Some(text) = self.tooltip {
@@ -58,23 +59,23 @@ impl<'a> IconButton<'a> {
 
         if self.primary || hover > 0.0 {
             let (glow, reach) = if self.primary { (0.4 + 0.15 * hover, 1.4 + 0.1 * hover) } else { (0.35 * hover, 1.5) };
-            painter.add(radial_glow_mesh(rect.center(), radius * reach, with_alpha(self.accent, (glow * 140.0) as u8), 28));
+            painter.add(radial_glow_mesh(rect.center(), radius * reach, with_alpha(accent, (glow * 140.0) as u8), 28));
         }
 
         let (fill, icon_color) = if self.primary {
-            let fill = theme::lerp_color(self.accent, Color32::WHITE, 0.25 * hover);
+            let fill = theme::lerp_color(accent, Color32::WHITE, 0.25 * hover);
             (fill, theme::BG_DARK)
         } else {
             let fill = if self.active {
-                with_alpha(self.accent, (46.0 + 30.0 * hover) as u8)
+                with_alpha(accent, (46.0 + 30.0 * hover) as u8)
             } else {
                 Color32::from_white_alpha((14.0 + 22.0 * hover) as u8)
             };
-            (fill, if self.active { self.accent } else { theme::lerp_color(theme::TEXT_MUTED, theme::TEXT_MAIN, hover) })
+            (fill, if self.active { accent } else { theme::lerp_color(theme::TEXT_MUTED, theme::TEXT_MAIN, hover) })
         };
         painter.circle_filled(rect.center(), radius, fill);
         if !self.primary {
-            painter.circle_stroke(rect.center(), radius, egui::Stroke::new(1.0_f32, theme::lerp_color(theme::GLASS_BORDER, self.accent, if self.active { 0.8 } else { hover * 0.6 })));
+            painter.circle_stroke(rect.center(), radius, egui::Stroke::new(1.0_f32, theme::lerp_color(theme::GLASS_BORDER, accent, if self.active { 0.8 } else { hover * 0.6 })));
         }
         painter.text(
             rect.center(),
@@ -85,7 +86,7 @@ impl<'a> IconButton<'a> {
         );
 
         if response.has_focus() {
-            painter.circle_stroke(rect.center(), radius + 3.0, egui::Stroke::new(2.0_f32, self.accent));
+            painter.circle_stroke(rect.center(), radius + 3.0, egui::Stroke::new(2.0_f32, accent));
         }
         response
     }

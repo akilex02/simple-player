@@ -1,11 +1,10 @@
 pub mod artists_grid;
 pub mod fullscreen;
 pub mod gallery;
-pub mod header;
 pub mod lyrics_panel;
-pub mod player_bar;
 pub mod progress;
-pub mod sidebar;
+pub mod screens;
+pub mod shell;
 mod size;
 pub mod backdrop;
 pub mod crossfade;

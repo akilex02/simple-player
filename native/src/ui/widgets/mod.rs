@@ -4,5 +4,6 @@ pub mod cover;
 pub mod glass;
 pub mod gradient;
 pub mod icon_button;
+pub mod nav_item;
 pub mod pill_button;
 pub mod slider;

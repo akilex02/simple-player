@@ -85,6 +85,16 @@ pub fn deco(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(FONT_CONDENSED.into()))
 }
 
+/// Acento dinámico del momento (sale de la carátula actual). Lo publica el
+/// fondo cada frame y lo leen los widgets que no reciben un acento explícito.
+pub fn set_accent(ctx: &egui::Context, color: Color32) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("dynamic_accent"), color));
+}
+
+pub fn accent(ctx: &egui::Context) -> Color32 {
+    ctx.data(|d| d.get_temp(egui::Id::new("dynamic_accent"))).unwrap_or(ACCENT_PINK)
+}
+
 pub fn with_alpha(c: Color32, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), alpha)
 }

@@ -40,6 +40,7 @@ struct App {
     textures: TextureCache,
     perf: perf::PerfHud,
     gallery: Option<ui::gallery::Gallery>,
+    backdrop: ui::backdrop::Backdrop,
     shot: Option<(String, u32)>,
 }
 
@@ -69,6 +70,14 @@ impl App {
 
         let mut state = AppState::new(audio, mpris_tx);
         state.init();
+        if let Some(tab) = ui::gallery::arg_value("--tab") {
+            match tab.as_str() {
+                "albums" => state.select_tab(ActiveTab::Albums),
+                "artists" => state.select_tab(ActiveTab::Artists),
+                _ => {}
+            }
+        }
+        state.show_queue = std::env::args().any(|a| a == "--queue");
         let gallery = std::env::args().any(|a| a == "--gallery").then(|| ui::gallery::Gallery::new(&state.songs));
 
         Self {
@@ -87,6 +96,7 @@ impl App {
             textures: TextureCache::default(),
             perf: perf::PerfHud::new(),
             gallery,
+            backdrop: ui::backdrop::Backdrop::new(),
             shot: ui::gallery::arg_value("--shot").map(|path| (path, 0)),
         }
     }
@@ -175,6 +185,9 @@ impl App {
             if i.modifiers.alt && i.key_pressed(egui::Key::ArrowLeft) {
                 self.state.handle_prev_song();
             }
+            if (i.key_pressed(egui::Key::Slash) && !editing_text) || (i.modifiers.command && i.key_pressed(egui::Key::K)) {
+                self.state.focus_search = true;
+            }
             if i.key_pressed(egui::Key::F3) {
                 self.perf.toggle();
             }
@@ -228,6 +241,10 @@ impl App {
         self.update_viz();
         self.state.ensure_lyrics_for_current_song();
 
+        let cover = self.state.current_song().and_then(|s| s.cover_art.clone());
+        self.backdrop.show(ctx, &mut self.textures, cover.as_deref(), ctx.screen_rect());
+        theme::set_accent(ctx, self.backdrop.accent());
+
         if self.state.is_fullscreen {
             ui::fullscreen::show(
                 ctx,
@@ -240,39 +257,36 @@ impl App {
             return;
         }
 
-        egui::SidePanel::left("sidebar")
-            .exact_width(250.0)
+        let sidebar = egui::SidePanel::left("sidebar")
+            .exact_width(236.0)
             .resizable(false)
-            .frame(egui::Frame::none().fill(theme::BG_SIDEBAR).inner_margin(20.0))
+            .frame(egui::Frame::none().fill(theme::GLASS_FILL_STRONG).inner_margin(egui::Margin::symmetric(16.0, 24.0)))
             .show(ctx, |ui| {
-                ui::sidebar::show(ui, &mut self.state);
+                ui::shell::sidebar::show(ui, &mut self.state);
             });
 
-        egui::TopBottomPanel::bottom("player_bar")
-            .exact_height(96.0)
-            .frame(egui::Frame::none().fill(theme::BG_CARD).inner_margin(16.0))
+        let bar = egui::TopBottomPanel::bottom("player_bar")
+            .exact_height(ui::shell::player_bar::HEIGHT)
+            .frame(egui::Frame::none().fill(theme::GLASS_FILL_STRONG))
             .show(ctx, |ui| {
-                ui::player_bar::show(ui, &mut self.state, &mut self.textures, &self.viz);
+                ui::shell::player_bar::show(ui, &mut self.state, &mut self.textures, &self.viz);
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(theme::BG_DARK).inner_margin(28.0))
+            .frame(egui::Frame::none().inner_margin(egui::Margin::symmetric(28.0, 20.0)))
             .show(ctx, |ui| {
-                ui::header::show(ui, &mut self.state);
+                ui::shell::topbar::show(ui, &mut self.state);
                 ui.add_space(16.0);
-
-                let show_artists_grid =
-                    self.state.active_tab == ActiveTab::Artists && self.state.selected_artist.is_none();
-
-                if show_artists_grid {
-                    ui::artists_grid::show(ui, &mut self.state, &mut self.textures);
-                } else {
-                    ui::song_table::show(ui, &mut self.state, &mut self.textures);
-                }
+                ui::screens::show(ui, &mut self.state, &mut self.textures);
             });
+
+        let lines = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("shell_borders")));
+        let stroke = egui::Stroke::new(1.0_f32, theme::GLASS_BORDER);
+        let (s, b) = (sidebar.response.rect, bar.response.rect);
+        lines.vline(s.right() - 0.5, s.y_range(), stroke);
+        lines.hline(b.x_range(), b.top() + 0.5, stroke);
     }
 }
-
 
 const ICON_PNG: &[u8] = include_bytes!("../assets/icons/icon.png");
 
