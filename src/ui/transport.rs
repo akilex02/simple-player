@@ -22,6 +22,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, size: Size) {
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
+        // La altura de la fila se fija desde el principio: si no, los botones anteriores al más alto
+        // (reproducir) se centran en una fila todavía baja y quedan escalonados.
+        ui.set_min_height(play_d);
         ui.add_space(leading);
 
         if IconButton::new(icons::SHUFFLE, icon_d).solid(solid).active(state.is_shuffle).tooltip("Aleatorio").show(ui).clicked() {
