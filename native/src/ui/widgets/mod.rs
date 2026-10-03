@@ -1,3 +1,4 @@
+pub mod bar_chart;
 pub mod card;
 pub mod chip;
 pub mod cover;
