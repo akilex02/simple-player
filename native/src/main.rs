@@ -21,7 +21,6 @@ use state::{ActiveTab, AppState};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use ui::textures::TextureCache;
-use ui::visualizers::VisualizerMode;
 use viz::{engine::VizEngine, VizFrame};
 
 struct App {
@@ -35,8 +34,7 @@ struct App {
     last_clock_sync: Instant,
     last_draw: Instant,
     viz_latency_secs: f64,
-    last_active_lyric_line: Option<usize>,
-    visualizer_mode: VisualizerMode,
+    fullscreen: ui::fullscreen::FullscreenView,
     textures: TextureCache,
     perf: perf::PerfHud,
     gallery: Option<ui::gallery::Gallery>,
@@ -78,6 +76,17 @@ impl App {
             }
         }
         state.show_queue = std::env::args().any(|a| a == "--queue");
+        if let Some(needle) = ui::gallery::arg_value("--song") {
+            if let Some(song) = state.songs.iter().find(|s| s.path.contains(&needle)).cloned() {
+                state.active_queue = vec![song];
+                state.current_song_index = Some(0);
+            }
+        }
+        if let Some(secs) = ui::gallery::arg_value("--time").and_then(|v| v.parse().ok()) {
+            state.current_time = secs;
+        }
+        state.is_fullscreen = std::env::args().any(|a| a == "--fullscreen");
+        state.show_lyrics = std::env::args().any(|a| a == "--lyrics");
         let gallery = std::env::args().any(|a| a == "--gallery").then(|| ui::gallery::Gallery::new(&state.songs));
 
         Self {
@@ -91,8 +100,7 @@ impl App {
             last_clock_sync: Instant::now(),
             last_draw: Instant::now(),
             viz_latency_secs: 0.0,
-            last_active_lyric_line: None,
-            visualizer_mode: VisualizerMode::Bars,
+            fullscreen: ui::fullscreen::FullscreenView::default(),
             textures: TextureCache::default(),
             perf: perf::PerfHud::new(),
             gallery,
@@ -174,6 +182,10 @@ impl App {
         // si el foco está en un campo de texto (egui ya no manda `Space` como
         // texto a un widget enfocado en ese caso, pero sí evitamos el bloqueo de flechas).
         let editing_text = ctx.wants_keyboard_input();
+        if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
+            let window_fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!window_fullscreen));
+        }
 
         ctx.input(|i| {
             if i.key_pressed(egui::Key::Space) && !editing_text {
@@ -187,6 +199,9 @@ impl App {
             }
             if (i.key_pressed(egui::Key::Slash) && !editing_text) || (i.modifiers.command && i.key_pressed(egui::Key::K)) {
                 self.state.focus_search = true;
+            }
+            if i.key_pressed(egui::Key::Escape) && self.state.is_fullscreen {
+                self.state.close_fullscreen();
             }
             if i.key_pressed(egui::Key::F3) {
                 self.perf.toggle();
@@ -245,18 +260,6 @@ impl App {
         self.backdrop.show(ctx, &mut self.textures, cover.as_deref(), ctx.screen_rect());
         theme::set_accent(ctx, self.backdrop.accent());
 
-        if self.state.is_fullscreen {
-            ui::fullscreen::show(
-                ctx,
-                &mut self.state,
-                &mut self.textures,
-                &mut self.last_active_lyric_line,
-                &self.viz,
-                &mut self.visualizer_mode,
-            );
-            return;
-        }
-
         let sidebar = egui::SidePanel::left("sidebar")
             .exact_width(236.0)
             .resizable(false)
@@ -290,7 +293,9 @@ impl App {
                 ui::screens::show(ui, &mut self.state, &mut self.textures);
             });
 
-        let lines = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("shell_borders")));
+        self.fullscreen.show(ctx, &mut self.state, &mut self.textures, &self.backdrop, &self.viz);
+
+        let lines = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("shell_borders")));
         let stroke = egui::Stroke::new(1.0_f32, theme::GLASS_BORDER);
         let (s, b) = (sidebar.response.rect, bar.response.rect);
         lines.vline(s.right() - 0.5, s.y_range(), stroke);

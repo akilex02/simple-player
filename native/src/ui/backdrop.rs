@@ -45,36 +45,50 @@ impl Backdrop {
         self.fade.is_animating()
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, textures: &mut TextureCache, cover: Option<&str>, rect: egui::Rect) {
+    /// Avanza el crossfade y el acento hacia la carátula actual. Una vez por frame.
+    pub fn update(&mut self, ctx: &egui::Context, textures: &mut TextureCache, cover: Option<&str>) {
         let dt = ctx.input(|i| i.stable_dt).min(0.1);
         self.fade.set_target(cover.map(String::from));
         self.fade.tick(dt);
 
-        let painter = ctx.layer_painter(egui::LayerId::background());
-        paint_sunset(&painter, rect, ctx.input(|i| i.time) as f32);
+        let dominant = self
+            .fade
+            .current()
+            .cloned()
+            .and_then(|path| textures.get_backdrop(&path))
+            .and_then(|(_, dominant)| dominant);
+        let target_accent = match dominant {
+            Some(d) => theme::lerp_color(theme::ACCENT_PINK, color::ensure_vibrant(d), 0.65),
+            None => theme::ACCENT_PINK,
+        };
+        self.accent = color::approach_color(self.accent, target_accent, dt, 0.35);
+        if self.fade.is_animating() || self.accent != target_accent {
+            ctx.request_repaint();
+        }
+    }
+
+    /// Dibuja el fondo sobre `painter` (el de la capa de fondo o el de un overlay).
+    pub fn paint(&self, textures: &mut TextureCache, painter: &egui::Painter, rect: egui::Rect, time: f32) {
+        paint_sunset(painter, rect, time);
 
         let layers = [
             (self.fade.previous().cloned(), self.fade.previous_alpha()),
             (self.fade.current().cloned(), self.fade.current_alpha()),
         ];
-        let mut target_accent = theme::ACCENT_PINK;
-        for (index, (path, alpha)) in layers.into_iter().enumerate() {
+        for (path, alpha) in layers {
             let Some(path) = path else { continue };
-            let Some((tex, dominant)) = textures.get_backdrop(&path) else { continue };
+            let Some((tex, _)) = textures.get_backdrop(&path) else { continue };
             let uv = cover_uv(tex.size_vec2(), rect.size());
             painter.image(tex.id(), rect, uv, Color32::from_white_alpha((alpha.clamp(0.0, 1.0) * 255.0) as u8));
-            if index == 1 {
-                if let Some(d) = dominant {
-                    target_accent = theme::lerp_color(theme::ACCENT_PINK, color::ensure_vibrant(d), 0.65);
-                }
-            }
         }
         painter.rect_filled(rect, 0.0, with_alpha(theme::BG_BASE, 150));
+    }
 
-        self.accent = color::approach_color(self.accent, target_accent, dt, 0.35);
-        if self.fade.is_animating() || self.accent != target_accent {
-            ctx.request_repaint();
-        }
+    /// Actualiza y pinta en la capa de fondo de la ventana.
+    pub fn show(&mut self, ctx: &egui::Context, textures: &mut TextureCache, cover: Option<&str>, rect: egui::Rect) {
+        self.update(ctx, textures, cover);
+        let painter = ctx.layer_painter(egui::LayerId::background());
+        self.paint(textures, &painter, rect, ctx.input(|i| i.time) as f32);
     }
 }
 

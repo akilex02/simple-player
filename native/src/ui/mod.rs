@@ -1,6 +1,6 @@
 pub mod fullscreen;
 pub mod gallery;
-pub mod lyrics_panel;
+pub mod lyrics_view;
 pub mod progress;
 pub mod screens;
 pub mod shell;
