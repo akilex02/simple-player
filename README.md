@@ -8,7 +8,7 @@ Un reproductor de música local para Linux, rápido y con estética "liquid-glas
 - **Reproducción:** motor GStreamer (MP3, FLAC, AAC, WAV…), seek preciso, aleatorio, repetir, cola visible y control de volumen.
 - **Pantalla completa "Ahora suena":** portada grande, fondo desenfocado que sigue a la carátula y acento dinámico.
 - **Letras sincronizadas:** desde un `.lrc` junto a la canción o las etiquetas del archivo; la línea activa se resalta y un clic en una línea salta a ese momento.
-- **Visualizador de espectro:** barras, radial (alrededor de la portada) o franja inferior, alineado con el reloj de reproducción.
+- **Visualizadores:** barras, anillo alrededor de la portada, partículas, constelación, osciloscopio o franja inferior, alineados con el reloj de reproducción; con un clic mantenido las partículas siguen al cursor.
 - **Estadísticas de escucha:** tiempo total, reproducciones, tops de canciones, artistas y álbumes, días activos, rachas, sesiones y línea de tiempo por rango (hoy, semana, mes, año, todo).
 - **Integración con el escritorio:** MPRIS2 (teclas multimedia y controles del sistema) y atajos globales.
 - **Ligero:** en reposo consume ~0.2 % de CPU; el repintado continuo solo ocurre mientras suena música.
@@ -27,6 +27,7 @@ Un reproductor de música local para Linux, rápido y con estética "liquid-glas
 | `L` | Letra |
 | `/` o `Ctrl+K` | Buscar |
 | `Esc` | Cerrar la pantalla completa |
+| `G` | Atraer / repeler las partículas con el clic (pantalla completa) |
 | `F11` | Pantalla completa de la ventana |
 | `F6` / `F7` / `F8` | Anterior / pausa / siguiente (globales, también con la ventana minimizada) |
 | `F3` | Panel de rendimiento (desarrollo) |
@@ -68,7 +69,7 @@ cargo run --release
    ├─ main.rs            # arranque, ciclo de la UI y atajos
    ├─ state.rs           # estado de la app (cola, reproducción, pestañas)
    ├─ audio/             # reproductor GStreamer, espectro y reloj de reproducción
-   ├─ viz/               # motor del visualizador (interpolación, barras, suavizado)
+   ├─ viz/               # motor del visualizador (interpolación, bandas, física de partículas)
    ├─ stats/             # estadísticas: sesión, almacén SQLite, agregación y servicio
    ├─ library*.rs        # escaneo y vistas cacheadas de la biblioteca
    ├─ lyrics.rs          # lectura y sincronización de letras
@@ -105,10 +106,13 @@ Opciones útiles (no escriben en tu base de estadísticas real):
 | `--stats-range today\|week\|month\|year\|all` | Rango de Estadísticas |
 | `--stats-db <ruta>` | Usa esa base de estadísticas |
 | `--fullscreen`, `--lyrics`, `--queue` | Abre la pantalla completa, las letras o la cola |
+| `--viz barras\|anillo\|particulas\|constelacion\|osciloscopio\|franja\|apagado` | Abre la pantalla completa con ese visualizador |
 | `--shot <ruta.png>` | Guarda una captura de la app y se cierra |
-| `--bench <segundos>` | Mide el consumo de CPU y se cierra |
+| `--bench <segundos>` | Mide CPU, GPU (vía `nvidia-smi` o sysfs) y vértices por frame, y se cierra |
 | `--allow-multiple`, `--no-hotkeys` | Permite otra instancia y omite los atajos globales |
 | `--window-size AxB` | Abre con ese tamaño (p. ej. `854x658`) sin guardarlo |
+
+Para medir CPU y GPU de cada visualizador: `scripts/bench-visualizers.sh` (variables `SECS`, `CPU_MAX`, `MS_MAX`, `GPU_MAX`); falla si algún modo rebasa los límites.
 
 Para un AppImage: `scripts/build-appimage.sh` (requiere `linuxdeploy-plugin-appimage`).
 
