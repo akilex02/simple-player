@@ -10,13 +10,14 @@ pub struct IconButton<'a> {
     active: bool,
     primary: bool,
     pulse: bool,
+    solid: bool,
     accent: Option<Color32>,
     tooltip: Option<&'a str>,
 }
 
 impl<'a> IconButton<'a> {
     pub fn new(icon: &'a str, size: f32) -> Self {
-        Self { icon, size, active: false, primary: false, pulse: false, accent: None, tooltip: None }
+        Self { icon, size, active: false, primary: false, pulse: false, solid: false, accent: None, tooltip: None }
     }
 
     /// Encendido (shuffle activo, letras visibles…): ícono en color de acento.
@@ -34,6 +35,12 @@ impl<'a> IconButton<'a> {
     /// El halo late suavemente (reproduciendo).
     pub fn pulse(mut self, pulse: bool) -> Self {
         self.pulse = pulse;
+        self
+    }
+
+    /// Respaldo oscuro bajo el botón, para que se distinga sobre fondos con movimiento (el visualizador).
+    pub fn solid(mut self, solid: bool) -> Self {
+        self.solid = solid;
         self
     }
 
@@ -85,6 +92,9 @@ impl<'a> IconButton<'a> {
             };
             (fill, if self.active { accent } else { theme::lerp_color(theme::TEXT_MUTED, theme::TEXT_MAIN, hover) })
         };
+        if self.solid && !self.primary {
+            painter.circle_filled(rect.center(), radius, with_alpha(theme::BG_BASE, 225));
+        }
         painter.circle_filled(rect.center(), radius, fill);
         if !self.primary {
             painter.circle_stroke(rect.center(), radius, egui::Stroke::new(1.0_f32, theme::lerp_color(theme::GLASS_BORDER, accent, if self.active { 0.8 } else { hover * 0.6 })));

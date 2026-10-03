@@ -151,6 +151,20 @@ impl FullscreenView {
 
         let center_w = (inner.width() - 460.0).clamp(320.0, 760.0);
         let center = egui::Rect::from_center_size(egui::pos2(inner.center().x, controls.center().y), egui::vec2(center_w, controls.height()));
+        // Velo: sube desde transparente hasta oscuro para que los controles se lean sobre las barras.
+        let veil = egui::Rect::from_min_max(egui::pos2(rect.left(), controls.top() - 60.0), rect.max);
+        let (clear, dark) = (egui::Color32::TRANSPARENT, egui::Color32::from_black_alpha(150));
+        let mut mesh = egui::Mesh::default();
+        let v = |pos: egui::Pos2, color| egui::epaint::Vertex { pos, uv: egui::epaint::WHITE_UV, color };
+        mesh.vertices.extend([
+            v(veil.left_top(), clear),
+            v(veil.right_top(), clear),
+            v(veil.right_bottom(), dark),
+            v(veil.left_bottom(), dark),
+        ]);
+        mesh.indices.extend([0, 1, 2, 0, 2, 3]);
+        ui.painter().add(egui::Shape::mesh(mesh));
+
         let mut main_controls = ui.new_child(egui::UiBuilder::new().max_rect(center).layout(egui::Layout::top_down(egui::Align::Center)));
         main_controls.add_space(20.0);
         progress::show(&mut main_controls, state, Size::Large);
