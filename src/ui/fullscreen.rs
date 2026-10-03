@@ -106,7 +106,8 @@ impl FullscreenView {
                 painter.rect_filled(rect, 0.0, egui::Color32::from_black_alpha(70));
 
                 let geo = self.geometry(ctx, rect, state.show_lyrics);
-                let pull = self.pull_from_input(ctx, &background, &geo, state.show_lyrics);
+                // En pausa la simulación no avanza, así que el clic tampoco atrae (ni se pinta el indicador).
+                let pull = self.pull_from_input(ctx, &background, &geo, state.show_lyrics).filter(|_| state.is_playing);
                 self.update_field(ctx, rect, &geo, viz, state.is_playing, pull);
                 self.paint_visualizer(ui, rect, viz, anim, pull);
                 self.content(ui, rect, state, textures, anim);
@@ -177,6 +178,11 @@ impl FullscreenView {
             return;
         };
         let bounds = Rect2::new(rect.left(), rect.top(), rect.right(), rect.bottom());
+        let anchor = Anchor {
+            center: V2::new(geo.cover_rect.center().x, geo.cover_rect.center().y),
+            radius: geo.cover_rect.width() * 0.5,
+        };
+        let time = ctx.input(|i| i.time) as f32;
         match &mut self.field {
             Some((mode, field)) if *mode == self.mode => {
                 if field.bounds() != bounds {
@@ -184,15 +190,12 @@ impl FullscreenView {
                 }
             }
             _ => {
-                self.field = Some((self.mode, ParticleField::new(kind, particle_draw::count_for(self.mode), bounds, FIELD_SEED)));
+                let mut field = ParticleField::new(kind, particle_draw::count_for(self.mode), bounds, FIELD_SEED);
+                field.settle(self.bands_now, anchor, time);
+                self.field = Some((self.mode, field));
             }
         }
         if playing {
-            let anchor = Anchor {
-                center: V2::new(geo.cover_rect.center().x, geo.cover_rect.center().y),
-                radius: geo.cover_rect.width() * 0.5,
-            };
-            let time = ctx.input(|i| i.time) as f32;
             if let Some((_, field)) = &mut self.field {
                 field.step(dt, self.bands_now, anchor, pull, time);
             }

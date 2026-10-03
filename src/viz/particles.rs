@@ -6,6 +6,8 @@ use std::collections::HashMap;
 pub const FRAME: f32 = 1.0 / 60.0;
 const MAX_STEPS: f32 = 3.0;
 const FRICTION: f32 = 0.98;
+/// Un rectángulo más chico que esto (ventana minimizada) no reubica el campo: se aplastaría sin remedio.
+const MIN_RESIZE: f32 = 50.0;
 const BOUNCE_LOSS: f32 = 0.7;
 /// Por debajo de esto una banda se considera silencio.
 const BAND_FLOOR: f32 = 0.02;
@@ -167,6 +169,9 @@ impl ParticleField {
 
     /// Reubica las partículas proporcionalmente al nuevo rectángulo, sin reiniciar la simulación.
     pub fn resize(&mut self, bounds: Rect2) {
+        if bounds.max.x - bounds.min.x < MIN_RESIZE || bounds.max.y - bounds.min.y < MIN_RESIZE {
+            return;
+        }
         let old = self.bounds;
         for p in &mut self.particles {
             let fx = (p.pos.x - old.min.x) / old.width();
@@ -182,13 +187,7 @@ impl ParticleField {
             return;
         }
         let k = (dt / FRAME).min(MAX_STEPS);
-        self.update_homes(bands, anchor, time);
-        if std::mem::take(&mut self.needs_snap) {
-            for p in &mut self.particles {
-                p.pos = p.home;
-                p.vel = V2::default();
-            }
-        }
+        self.settle(bands, anchor, time);
         let spring = spring_constant(pull.is_some());
         let damping = FRICTION.powf(k);
         let (bounds, kind) = (self.bounds, self.kind);
@@ -231,6 +230,18 @@ impl ParticleField {
             }
             if kind == FieldKind::Free || pull.is_some() {
                 bounce(p, bounds);
+            }
+        }
+    }
+
+    /// Calcula los destinos del resorte y, la primera vez, deja ahí a las partículas. Se llama al crear el
+    /// campo (así el Anillo y el Osciloscopio se ven formados aunque la música esté en pausa) y en cada paso.
+    pub fn settle(&mut self, bands: Bands, anchor: Anchor, time: f32) {
+        self.update_homes(bands, anchor, time);
+        if std::mem::take(&mut self.needs_snap) {
+            for p in &mut self.particles {
+                p.pos = p.home;
+                p.vel = V2::default();
             }
         }
     }
@@ -635,5 +646,29 @@ mod tests {
         field.step(FRAME, Bands::default(), anchor(), None, 0.0);
         let moved = field.particles().iter().zip(&before).filter(|(p, b)| p.pos != **b).count();
         assert!(moved > 50, "solo {moved} de 100 se movieron por su velocidad");
+    }
+
+    #[test]
+    fn settle_forma_el_anillo_y_el_osciloscopio_sin_avanzar_la_simulacion() {
+        for kind in [FieldKind::Ring, FieldKind::Wave] {
+            let mut field = ParticleField::new(kind, 360, bounds(), 3);
+            field.settle(Bands::default(), anchor(), 0.0);
+            let worst = field.particles().iter().map(|p| p.pos.dist(p.home)).fold(0.0, f32::max);
+            assert!(worst < 3.0, "{kind:?}: la peor partícula está a {worst} px de su destino");
+        }
+    }
+
+    #[test]
+    fn un_resize_a_casi_cero_no_aplasta_el_campo() {
+        let mut field = ParticleField::new(FieldKind::Free, 100, bounds(), 3);
+        let before: Vec<V2> = field.particles().iter().map(|p| p.pos).collect();
+        field.resize(Rect2::new(0.0, 0.0, 0.0, 0.0));
+        let after: Vec<V2> = field.particles().iter().map(|p| p.pos).collect();
+        assert_eq!(before, after);
+        assert_eq!(field.bounds(), bounds());
+        // Al volver a un tamaño normal sí se reubica.
+        let normal = Rect2::new(0.0, 0.0, 500.0, 300.0);
+        field.resize(normal);
+        assert_eq!(field.bounds(), normal);
     }
 }

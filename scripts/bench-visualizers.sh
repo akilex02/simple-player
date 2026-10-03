@@ -12,7 +12,8 @@ GPU_MAX="${GPU_MAX:-30}"
 BIN="${BIN:-target/release/simple-player}"
 MODES=("Barras" "Anillo" "Partículas" "Constelación" "Osciloscopio" "Franja")
 
-[ -x "$BIN" ] || cargo build --release
+# Siempre compila (incremental): medir un binario viejo daría números de otro código.
+cargo build --release --quiet
 
 over() { awk -v v="$1" -v max="$2" 'BEGIN { exit !(v > max) }'; }
 
@@ -25,6 +26,8 @@ for mode in "${MODES[@]}"; do
   gpu=$(grep -oP 'GPU \K[0-9.]+' <<<"$line" || echo "n/d")
   verts=$(grep -oP '\| \K[0-9]+(?= vértices)' <<<"$line" || echo "n/d")
   printf '%-14s %8s %8s %8s %10s\n' "$mode" "$cpu" "$ms" "$gpu" "$verts"
+  # Sin línea [bench] (el binario falló o no imprimió) no se midió nada: eso es un fallo, no un pase.
+  if [[ -z "$line" || "$cpu" == "n/d" || "$ms" == "n/d" ]]; then echo "  ✗ sin medición para $mode"; fail=1; continue; fi
   if [[ "$cpu" != "n/d" ]] && over "$cpu" "$CPU_MAX"; then echo "  ✗ CPU $cpu % supera $CPU_MAX %"; fail=1; fi
   if [[ "$ms" != "n/d" ]] && over "$ms" "$MS_MAX"; then echo "  ✗ $ms ms/frame supera $MS_MAX ms"; fail=1; fi
   if [[ "$gpu" != "n/d" ]] && over "$gpu" "$GPU_MAX"; then echo "  ✗ GPU $gpu % supera $GPU_MAX %"; fail=1; fi
