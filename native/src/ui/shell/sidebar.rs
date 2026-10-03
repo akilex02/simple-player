@@ -18,6 +18,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
         (icons::MUSIC_NOTES, "Canciones", ActiveTab::All),
         (icons::DISC, "Álbumes", ActiveTab::Albums),
         (icons::USER, "Artistas", ActiveTab::Artists),
+        (icons::CHART_BAR, "Estadísticas", ActiveTab::Stats),
     ] {
         if nav_item(ui, icon, label, state.active_tab == tab).clicked() {
             state.select_tab(tab);

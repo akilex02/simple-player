@@ -6,6 +6,10 @@ use eframe::egui::{self, RichText};
 pub const SEARCH_ID: &str = "search_box";
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
+    if state.active_tab == crate::state::ActiveTab::Stats {
+        ui.add_space(8.0); // el buscador no aplica en Estadísticas
+        return;
+    }
     ui.horizontal(|ui| {
         let in_detail = state.selected_artist.is_some() || state.selected_album.is_some();
         if in_detail && IconButton::new(icons::CARET_LEFT, 38.0).tooltip("Volver").show(ui).clicked() {

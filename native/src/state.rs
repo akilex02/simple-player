@@ -19,6 +19,7 @@ pub enum ActiveTab {
     All,
     Albums,
     Artists,
+    Stats,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

@@ -83,8 +83,18 @@ impl App {
             match tab.as_str() {
                 "albums" => state.select_tab(ActiveTab::Albums),
                 "artists" => state.select_tab(ActiveTab::Artists),
+                "stats" => state.select_tab(ActiveTab::Stats),
                 _ => {}
             }
+        }
+        if let Some(range) = ui::gallery::arg_value("--stats-range") {
+            state.stats_range = match range.as_str() {
+                "today" => stats::model::StatsRange::Today,
+                "month" => stats::model::StatsRange::Month,
+                "year" => stats::model::StatsRange::Year,
+                "all" => stats::model::StatsRange::All,
+                _ => stats::model::StatsRange::Week,
+            };
         }
         state.show_queue = std::env::args().any(|a| a == "--queue");
         if let Some(needle) = ui::gallery::arg_value("--song") {

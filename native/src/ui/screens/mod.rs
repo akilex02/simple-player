@@ -4,6 +4,7 @@ mod hero;
 pub mod layout;
 pub mod queue_panel;
 mod songs;
+mod stats;
 
 use super::textures::TextureCache;
 use crate::state::{ActiveTab, AppState};
@@ -39,6 +40,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
     fade_in_on_change(ui, state);
     match state.active_tab {
         ActiveTab::Artists if state.selected_artist.is_none() => artists::show(ui, state, textures),
+        ActiveTab::Stats => stats::show(ui, state, textures),
         ActiveTab::Albums if state.selected_album.is_none() => albums::show(ui, state, textures),
         _ => songs::show(ui, state, textures),
     }
