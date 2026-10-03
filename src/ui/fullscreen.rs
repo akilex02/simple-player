@@ -14,6 +14,9 @@ use eframe::egui::{self, RichText};
 const CONTROLS_H: f32 = 168.0;
 const BOTTOM_MARGIN: f32 = 32.0;
 const STRIP_H: f32 = 84.0;
+/// Margen sobre la fila de botones y alto del botón de reproducir (`Size::Large`).
+const TRANSPORT_TOP: f32 = 20.0;
+const TRANSPORT_H: f32 = 64.0;
 
 /// Pantalla completa "Ahora suena": un overlay que aparece y desaparece con
 /// fundido sobre la app. Portada grande, fondo desenfocado, visualizador como
@@ -166,12 +169,15 @@ impl FullscreenView {
         ui.painter().add(egui::Shape::mesh(mesh));
 
         let mut main_controls = ui.new_child(egui::UiBuilder::new().max_rect(center).layout(egui::Layout::top_down(egui::Align::Center)));
-        main_controls.add_space(20.0);
-        progress::show(&mut main_controls, state, Size::Large);
-        main_controls.add_space(10.0);
+        // Mismo orden que la barra inferior: botones arriba, línea de tiempo debajo.
+        main_controls.add_space(TRANSPORT_TOP);
         transport::show(&mut main_controls, state, Size::Large);
+        main_controls.add_space(10.0);
+        progress::show(&mut main_controls, state, Size::Large);
 
-        let vol = egui::Rect::from_min_size(egui::pos2(inner.right() - 250.0, controls.center().y - 20.0), egui::vec2(250.0, 40.0));
+        // El volumen se alinea con la fila de botones (su centro vertical).
+        let transport_center_y = center.top() + TRANSPORT_TOP + TRANSPORT_H / 2.0;
+        let vol = egui::Rect::from_center_size(egui::pos2(inner.right() - 125.0, transport_center_y), egui::vec2(250.0, 40.0));
         let mut volume_ui = ui.new_child(egui::UiBuilder::new().max_rect(vol).layout(egui::Layout::right_to_left(egui::Align::Center)));
         volume_ui.allocate_ui_with_layout(egui::vec2(216.0, 34.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             volume::show(ui, state, Size::Compact);
