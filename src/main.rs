@@ -11,6 +11,7 @@ mod persistence;
 mod repaint;
 mod shortcuts;
 mod single_instance;
+mod window_state;
 mod state;
 mod stats;
 mod theme;
@@ -43,11 +44,14 @@ struct App {
     gallery: Option<ui::gallery::Gallery>,
     backdrop: ui::backdrop::Backdrop,
     shot: Option<(String, u32)>,
+    /// Dónde guardar el tamaño de la ventana al cerrar (`None` en corridas de desarrollo).
+    window_state_path: Option<std::path::PathBuf>,
+    window_size: Option<window_state::WindowSize>,
     bench: Option<Bench>,
 }
 
 impl App {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, window_state_path: Option<std::path::PathBuf>) -> Self {
         theme::install(&cc.egui_ctx);
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
@@ -161,6 +165,8 @@ impl App {
             gallery,
             backdrop: ui::backdrop::Backdrop::new(),
             shot: ui::gallery::arg_value("--shot").map(|path| (path, 0)),
+            window_state_path,
+            window_size: None,
             bench: ui::gallery::arg_value("--bench").and_then(|v| v.parse().ok()).map(Bench::new),
         }
     }
@@ -205,6 +211,20 @@ impl App {
                 self.perf.record_spectrum_lead((newest - clock_now) * 1000.0);
             }
             self.perf.record_underrun(self.viz_engine.underrun());
+        }
+    }
+
+    /// Recuerda el último tamaño "normal" de la ventana (no maximizada ni a pantalla completa).
+    fn track_window_size(&mut self, ctx: &egui::Context) {
+        let size = ctx.input(|i| {
+            let v = i.viewport();
+            if v.maximized == Some(true) || v.fullscreen == Some(true) {
+                return None;
+            }
+            v.inner_rect.map(|r| window_state::WindowSize { width: r.width(), height: r.height() })
+        });
+        if size.is_some() {
+            self.window_size = size;
         }
     }
 
@@ -309,6 +329,7 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.track_window_size(ctx);
         self.handle_dev_screenshot(ctx);
         self.handle_dev_bench(ctx);
         self.perf.begin_frame(Instant::now());
@@ -331,6 +352,9 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let (Some(path), Some(size)) = (&self.window_state_path, self.window_size) {
+            let _ = window_state::save(path, size);
+        }
         self.state.stats.finish();
         self.state.stats.handle().flush(std::time::Duration::from_secs(1));
     }
@@ -501,8 +525,21 @@ fn main() -> eframe::Result<()> {
 
     let icon = load_icon(ICON_PNG);
 
+    // Tamaño de la ventana: `--window-size AxB` (pruebas) > el guardado > el predeterminado.
+    // Las corridas de desarrollo no leen ni escriben el archivo del usuario.
+    let dev_window = ["--shot", "--bench", "--gallery"].iter().any(|f| std::env::args().any(|a| a == *f));
+    let saved_path = window_state::window_state_path(
+        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+        std::env::var("HOME").ok().as_deref(),
+    );
+    let forced = ui::gallery::arg_value("--window-size").and_then(|v| window_state::parse_size_arg(&v));
+    let initial = forced
+        .or_else(|| if dev_window { None } else { window_state::load(&saved_path) })
+        .unwrap_or(window_state::DEFAULT_SIZE);
+    let window_state_path = (!dev_window && forced.is_none()).then_some(saved_path);
+
     let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size([1600.0, 1000.0])
+        .with_inner_size([initial.width, initial.height])
         .with_title("Simple Player");
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);
@@ -516,6 +553,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Simple Player",
         options,
-        Box::new(|cc| Ok(Box::new(App::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(App::new(cc, window_state_path)))),
     )
 }

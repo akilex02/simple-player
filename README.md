@@ -84,6 +84,7 @@ cargo run --release
 |---|---|
 | Caché de la biblioteca y carátulas, y el estado de reproducción | `~/.cache/music-player/` |
 | Historial de escucha (estadísticas) | `~/.local/share/simple-player/stats.db` (respeta `XDG_DATA_HOME`) |
+| Tamaño de la ventana (abre en 1050×750 la primera vez) | `~/.config/simple-player/window.json` (respeta `XDG_CONFIG_HOME`) |
 
 Todo es local; la app no usa la red.
 
@@ -107,6 +108,7 @@ Opciones útiles (no escriben en tu base de estadísticas real):
 | `--shot <ruta.png>` | Guarda una captura de la app y se cierra |
 | `--bench <segundos>` | Mide el consumo de CPU y se cierra |
 | `--allow-multiple`, `--no-hotkeys` | Permite otra instancia y omite los atajos globales |
+| `--window-size AxB` | Abre con ese tamaño (p. ej. `854x658`) sin guardarlo |
 
 Para un AppImage: `scripts/build-appimage.sh` (requiere `linuxdeploy-plugin-appimage`).
 
