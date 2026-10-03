@@ -11,6 +11,7 @@ mod perf;
 mod persistence;
 mod repaint;
 mod shortcuts;
+mod settings;
 mod single_instance;
 mod window_state;
 mod state;
