@@ -6,10 +6,12 @@ pub mod player_bar;
 pub mod progress;
 pub mod sidebar;
 mod size;
+pub mod crossfade;
 pub mod song_table;
 pub mod textures;
 pub mod transport;
 pub mod visualizers;
+pub mod widgets;
 pub mod volume;
 
 use crate::theme;

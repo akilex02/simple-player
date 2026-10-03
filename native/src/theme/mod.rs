@@ -1,3 +1,6 @@
+pub mod blur;
+pub mod color;
+
 use eframe::egui;
 
 // Tokens de color — misma paleta que `:root` en App.css (versión Tauri).
@@ -23,8 +26,8 @@ pub fn install(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
 
     let font_files: &[(&str, &[u8])] = &[
-        (FONT_REGULAR, include_bytes!("../assets/fonts/GTAArtDeco_Regular.ttf")),
-        (FONT_CONDENSED, include_bytes!("../assets/fonts/GTAArtDeco_CondensedBold.ttf")),
+        (FONT_REGULAR, include_bytes!("../../assets/fonts/GTAArtDeco_Regular.ttf")),
+        (FONT_CONDENSED, include_bytes!("../../assets/fonts/GTAArtDeco_CondensedBold.ttf")),
     ];
 
     for (name, bytes) in font_files {
