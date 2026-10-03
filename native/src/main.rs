@@ -39,6 +39,8 @@ struct App {
     visualizer_mode: VisualizerMode,
     textures: TextureCache,
     perf: perf::PerfHud,
+    gallery: Option<ui::gallery::Gallery>,
+    shot: Option<(String, u32)>,
 }
 
 impl App {
@@ -67,6 +69,7 @@ impl App {
 
         let mut state = AppState::new(audio, mpris_tx);
         state.init();
+        let gallery = std::env::args().any(|a| a == "--gallery").then(|| ui::gallery::Gallery::new(&state.songs));
 
         Self {
             state,
@@ -83,6 +86,8 @@ impl App {
             visualizer_mode: VisualizerMode::Bars,
             textures: TextureCache::default(),
             perf: perf::PerfHud::new(),
+            gallery,
+            shot: ui::gallery::arg_value("--shot").map(|path| (path, 0)),
         }
     }
 
@@ -129,6 +134,31 @@ impl App {
         }
     }
 
+    /// Flag de desarrollo `--shot <ruta>`: la app guarda su propia captura a
+    /// los ~2 s y se cierra, para revisar el aspecto sin depender del escritorio.
+    fn handle_dev_screenshot(&mut self, ctx: &egui::Context) {
+        let Some((path, frames)) = &mut self.shot else { return };
+        ctx.request_repaint();
+        *frames += 1;
+        if *frames == 120 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+        }
+        let image = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(image) = image {
+            let [w, h] = image.size;
+            let rgba: Vec<u8> = image.pixels.iter().flat_map(|p| p.to_array()).collect();
+            if let Some(img) = image::RgbaImage::from_raw(w as u32, h as u32, rgba) {
+                let _ = img.save(&*path);
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
     fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
         // Coincide con los atajos globales de teclado de App.tsx: se ignoran
         // si el foco está en un campo de texto (egui ya no manda `Space` como
@@ -160,6 +190,7 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_dev_screenshot(ctx);
         self.perf.begin_frame(Instant::now());
         self.draw(ctx);
         let (tex_count, tex_bytes) = self.textures.stats();
@@ -183,6 +214,11 @@ impl eframe::App for App {
 impl App {
     fn draw(&mut self, ctx: &egui::Context) {
         self.textures.begin_frame(ctx, 3);
+
+        if let Some(gallery) = &mut self.gallery {
+            gallery.show(ctx, &mut self.textures);
+            return;
+        }
 
         self.handle_events();
         self.handle_keyboard_shortcuts(ctx);

@@ -19,6 +19,22 @@ pub fn horizontal_gradient_mesh(rect: egui::Rect, stops: &[(f32, Color32)]) -> e
     mesh
 }
 
+/// Resplandor radial: color pleno en el centro que se desvanece a transparente en el borde.
+pub fn radial_glow_mesh(center: egui::Pos2, radius: f32, color: Color32, segments: u32) -> egui::Mesh {
+    let mut mesh = egui::Mesh::default();
+    let vertex = |pos: egui::Pos2, color: Color32| egui::epaint::Vertex { pos, uv: egui::epaint::WHITE_UV, color };
+    mesh.vertices.push(vertex(center, color));
+    for i in 0..segments {
+        let angle = i as f32 / segments as f32 * std::f32::consts::TAU;
+        let rim = center + egui::vec2(angle.cos(), angle.sin()) * radius;
+        mesh.vertices.push(vertex(rim, Color32::TRANSPARENT));
+    }
+    for i in 0..segments {
+        mesh.indices.extend([0, 1 + i, 1 + (i + 1) % segments]);
+    }
+    mesh
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,5 +76,20 @@ mod tests {
     #[test]
     fn menos_de_dos_paradas_no_dibuja_nada() {
         assert!(horizontal_gradient_mesh(rect(), &STOPS[..1]).vertices.is_empty());
+    }
+
+    #[test]
+    fn el_resplandor_es_un_abanico_con_el_centro_opaco_y_el_borde_transparente() {
+        let color = Color32::from_rgb(255, 100, 150);
+        let mesh = radial_glow_mesh(egui::pos2(50.0, 60.0), 40.0, color, 24);
+        assert_eq!(mesh.vertices.len(), 25);
+        assert_eq!(mesh.indices.len(), 72);
+        assert!(mesh.indices.iter().all(|i| (*i as usize) < mesh.vertices.len()));
+        assert_eq!(mesh.vertices[0].color, color);
+        for v in &mesh.vertices[1..] {
+            assert_eq!(v.color, Color32::TRANSPARENT);
+            let d = ((v.pos.x - 50.0).powi(2) + (v.pos.y - 60.0).powi(2)).sqrt();
+            assert!((d - 40.0).abs() < 1e-3, "distancia {d}");
+        }
     }
 }

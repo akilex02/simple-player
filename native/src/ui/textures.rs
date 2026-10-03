@@ -9,6 +9,8 @@ pub enum CoverSize {
     Thumb,
     Card,
     Large,
+    /// Miniatura desenfocada para el fondo; también aporta el color dominante.
+    Backdrop,
 }
 
 impl CoverSize {
@@ -17,6 +19,7 @@ impl CoverSize {
             CoverSize::Thumb => 64,
             CoverSize::Card => 256,
             CoverSize::Large => 512,
+            CoverSize::Backdrop => 48,
         }
     }
 
@@ -110,6 +113,7 @@ struct Entry {
     handle: egui::TextureHandle,
     bytes: usize,
     last_used: u64,
+    accent: Option<egui::Color32>,
 }
 
 #[derive(Default)]
@@ -125,6 +129,7 @@ struct DecodedImage {
     w: usize,
     h: usize,
     rgba: Vec<u8>,
+    accent: Option<egui::Color32>,
 }
 
 enum DecodeResult {
@@ -137,13 +142,14 @@ type Key = (CoverSize, String);
 const DEFAULT_BUDGET_BYTES: usize = 64 * 1024 * 1024;
 const MAX_INFLIGHT: usize = 4;
 const MAX_UPLOADS_PER_FRAME: usize = 4;
+const BACKDROP_BLUR_RADIUS: usize = 3;
 
 /// Carátulas como texturas de egui: decodificadas en hilos de fondo al tamaño
 /// que se necesita (64 / 256 / 512 px), con memoria acotada por LRU y una cola
 /// que decodifica primero lo que está en pantalla. El hilo de UI solo sube a
 /// GPU (`load_texture`) lo ya decodificado.
 pub struct TextureCache {
-    caches: [SizeCache; 3],
+    caches: [SizeCache; 4],
     queue: JobQueue<Key>,
     frame: u64,
     budget_bytes: usize,
@@ -197,7 +203,10 @@ impl TextureCache {
                     let color = egui::ColorImage::from_rgba_unmultiplied([img.w, img.h], &img.rgba);
                     let name = format!("{:?}:{}", img.size, img.path);
                     let handle = ctx.load_texture(name, color, egui::TextureOptions::LINEAR);
-                    cache.entries.insert(img.path, Entry { handle, bytes: img.w * img.h * 4, last_used: self.frame });
+                    cache.entries.insert(
+                        img.path,
+                        Entry { handle, bytes: img.w * img.h * 4, last_used: self.frame, accent: img.accent },
+                    );
                 }
                 DecodeResult::Err(size, path) => {
                     let cache = &mut self.caches[size.index()];
@@ -248,10 +257,24 @@ impl TextureCache {
     }
 
     pub fn get_or_load(&mut self, path: &str, size: CoverSize) -> Option<egui::TextureHandle> {
+        self.get_entry(path, size).map(|(handle, _)| handle)
+    }
+
+    /// Fondo desenfocado de una carátula y su color dominante (si lo tiene).
+    pub fn get_backdrop(&mut self, path: &str) -> Option<(egui::TextureHandle, Option<egui::Color32>)> {
+        self.get_entry(path, CoverSize::Backdrop)
+    }
+
+    /// `true` si la carátula ya se intentó decodificar y no se pudo.
+    pub fn has_failed(&self, path: &str, size: CoverSize) -> bool {
+        self.caches[size.index()].failed.contains(path)
+    }
+
+    fn get_entry(&mut self, path: &str, size: CoverSize) -> Option<(egui::TextureHandle, Option<egui::Color32>)> {
         let cache = &mut self.caches[size.index()];
         if let Some(entry) = cache.entries.get_mut(path) {
             entry.last_used = self.frame;
-            return Some(entry.handle.clone());
+            return Some((entry.handle.clone(), entry.accent));
         }
         if !cache.pending.contains(path) && !cache.failed.contains(path) {
             self.queue.request((size, path.to_string()), self.frame);
@@ -269,7 +292,14 @@ fn decode(path: &str, size: CoverSize) -> Option<DecodedImage> {
         .resize(size.px(), size.px(), image::imageops::FilterType::Triangle)
         .to_rgba8();
     let (w, h) = img.dimensions();
-    Some(DecodedImage { size, path: path.to_string(), w: w as usize, h: h as usize, rgba: img.into_raw() })
+    let (w, h) = (w as usize, h as usize);
+    let mut rgba = img.into_raw();
+    let mut accent = None;
+    if size == CoverSize::Backdrop {
+        accent = crate::theme::color::dominant_color(&rgba, w, h);
+        rgba = crate::theme::blur::box_blur_rgba(&rgba, w, h, BACKDROP_BLUR_RADIUS);
+    }
+    Some(DecodedImage { size, path: path.to_string(), w, h, rgba, accent })
 }
 
 #[cfg(test)]
@@ -408,6 +438,20 @@ mod tests {
         let card = decode(&path, CoverSize::Card).unwrap();
         assert_eq!((thumb.w, thumb.h), (64, 64));
         assert_eq!((card.w, card.h), (256, 256));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn el_fondo_se_decodifica_pequeno_con_color_dominante_y_las_miniaturas_no() {
+        let dir = std::env::temp_dir().join(format!("sp_tex_bd_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = write_png(&dir, "rojo.png");
+
+        let backdrop = decode(&path, CoverSize::Backdrop).unwrap();
+        assert!(backdrop.w <= 48 && backdrop.h <= 48);
+        let accent = backdrop.accent.expect("la carátula roja tiene color dominante");
+        assert!(accent.r() > accent.g() && accent.r() > accent.b(), "{accent:?}");
+        assert_eq!(decode(&path, CoverSize::Thumb).unwrap().accent, None);
         std::fs::remove_dir_all(&dir).ok();
     }
 }
