@@ -5,6 +5,9 @@ use crate::library_view::{self, AlbumGroup, LibraryView};
 use crate::lyrics::{self, Lyrics};
 use crate::mpris::MprisMsg;
 use crate::persistence::{load_playback_state, save_playback_state, PlaybackState};
+use crate::stats::model::{SongSnapshot, StatsRange};
+use crate::stats::recorder::StatsRecorder;
+use crate::stats::service::StatsHandle;
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use std::sync::mpsc::SyncSender;
@@ -116,6 +119,11 @@ pub struct AppState {
     pub show_queue: bool,
     /// Pide que la barra superior enfoque el buscador en el próximo frame.
     pub focus_search: bool,
+    /// Registro de estadísticas de escucha (deshabilitado hasta que `main` lo inicie).
+    pub stats: StatsRecorder,
+    pub stats_range: StatsRange,
+    /// Última (rango, versión de eventos) para la que la pantalla pidió un resumen.
+    pub stats_requested: Option<(StatsRange, u64)>,
     seek_guard: SeekGuard,
 
     pub sort_field: SortField,
@@ -156,6 +164,9 @@ impl AppState {
             selected_album: None,
             show_queue: false,
             focus_search: false,
+            stats: StatsRecorder::new(StatsHandle::disabled("Las estadísticas todavía no se iniciaron")),
+            stats_range: StatsRange::Week,
+            stats_requested: None,
             seek_guard: SeekGuard::new(),
             sort_field: SortField::Title,
             sort_direction: SortDirection::Asc,
@@ -293,6 +304,7 @@ impl AppState {
         let len = queue.len() as i64;
         let valid_index = ((index % len) + len) % len;
         let song = queue[valid_index as usize].clone();
+        self.stats.song_started(SongSnapshot::from(&song), true);
 
         self.active_queue = queue;
         self.current_song_index = Some(valid_index as usize);

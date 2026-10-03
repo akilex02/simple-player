@@ -12,7 +12,6 @@ mod repaint;
 mod shortcuts;
 mod single_instance;
 mod state;
-#[allow(dead_code)]
 mod stats;
 mod theme;
 mod ui;
@@ -117,6 +116,21 @@ impl App {
             }
         }
         state.show_lyrics = std::env::args().any(|a| a == "--lyrics");
+
+        // Estadísticas: base real en uso normal; memoria en corridas de desarrollo.
+        let args: Vec<String> = std::env::args().collect();
+        let location = stats::location::location_from_args(
+            &args,
+            std::env::var("XDG_DATA_HOME").ok().as_deref(),
+            std::env::var("HOME").ok().as_deref(),
+        );
+        let repaint_ctx = cc.egui_ctx.clone();
+        let stats_handle = stats::service::StatsHandle::spawn(location, std::sync::Arc::new(move || repaint_ctx.request_repaint()));
+        if args.iter().any(|a| a == "--stats-demo") {
+            let snapshots: Vec<stats::model::SongSnapshot> = state.songs.iter().take(60).map(stats::model::SongSnapshot::from).collect();
+            stats_handle.record_batch(stats::demo::demo_events(stats::recorder::epoch_ms_now(), &snapshots));
+        }
+        state.stats = stats::recorder::StatsRecorder::new(stats_handle);
         let gallery = std::env::args().any(|a| a == "--gallery").then(|| ui::gallery::Gallery::new(&state.songs));
 
         Self {
@@ -304,6 +318,11 @@ impl eframe::App for App {
             repaint::Repaint::After(d) => ctx.request_repaint_after(d),
         }
     }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.state.stats.finish();
+        self.state.stats.handle().flush(std::time::Duration::from_secs(1));
+    }
 }
 
 impl App {
@@ -320,6 +339,7 @@ impl App {
         let tick_start = Instant::now();
         self.state.tick();
         self.perf.record_tick(tick_start.elapsed());
+        self.state.stats.observe(self.state.is_playing);
         self.update_viz();
         self.state.ensure_lyrics_for_current_song();
 
