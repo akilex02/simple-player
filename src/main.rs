@@ -122,13 +122,8 @@ impl App {
         }
         state.is_fullscreen = std::env::args().any(|a| a == "--fullscreen");
         let mut fullscreen_view = ui::fullscreen::FullscreenView::default();
-        if let Some(mode) = ui::gallery::arg_value("--viz") {
-            while fullscreen_view.mode.label().to_lowercase() != mode.to_lowercase() && fullscreen_view.mode.next() != ui::visualizers::VisualizerMode::Bars {
-                fullscreen_view.mode = fullscreen_view.mode.next();
-            }
-            if fullscreen_view.mode.label().to_lowercase() != mode.to_lowercase() {
-                fullscreen_view.mode = ui::visualizers::VisualizerMode::Bars;
-            }
+        if let Some(mode) = ui::gallery::arg_value("--viz").and_then(|v| ui::visualizers::VisualizerMode::from_name(&v)) {
+            fullscreen_view.mode = mode;
         }
         state.show_lyrics = std::env::args().any(|a| a == "--lyrics");
 
