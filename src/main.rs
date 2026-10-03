@@ -379,19 +379,20 @@ impl App {
         self.backdrop.show(ctx, &mut self.textures, cover.as_deref(), ctx.screen_rect());
         theme::set_accent(ctx, self.backdrop.accent());
 
+        // La barra se muestra primero para que ocupe todo el ancho (el sidebar y la cola quedan encima de ella).
+        let bar = egui::TopBottomPanel::bottom("player_bar")
+            .exact_height(ui::shell::player_bar::HEIGHT)
+            .frame(egui::Frame::none().fill(theme::GLASS_FILL_STRONG))
+            .show(ctx, |ui| {
+                ui::shell::player_bar::show(ui, &mut self.state, &mut self.textures, &self.viz);
+            });
+
         let sidebar = egui::SidePanel::left("sidebar")
             .exact_width(236.0)
             .resizable(false)
             .frame(egui::Frame::none().fill(theme::GLASS_FILL_STRONG).inner_margin(egui::Margin::symmetric(16.0, 24.0)))
             .show(ctx, |ui| {
                 ui::shell::sidebar::show(ui, &mut self.state);
-            });
-
-        let bar = egui::TopBottomPanel::bottom("player_bar")
-            .exact_height(ui::shell::player_bar::HEIGHT)
-            .frame(egui::Frame::none().fill(theme::GLASS_FILL_STRONG))
-            .show(ctx, |ui| {
-                ui::shell::player_bar::show(ui, &mut self.state, &mut self.textures, &self.viz);
             });
 
         let queue = self.state.show_queue.then(|| {

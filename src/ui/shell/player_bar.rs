@@ -10,7 +10,8 @@ use eframe::egui::{self, RichText};
 pub const HEIGHT: f32 = 96.0;
 const VOLUME_GROUP_W: f32 = 140.0;
 const CENTER_MIN_W: f32 = 300.0;
-const LEFT_MIN_W: f32 = 100.0;
+/// Ancho que debe conservar la pista actual para que se sume el mini visualizador.
+const LEFT_COMFY_W: f32 = 240.0;
 const VIZ_W: f32 = 120.0;
 /// Tres botones de 34 px, sus separaciones y el grupo de volumen.
 const RIGHT_W: f32 = 3.0 * 34.0 + 3.0 * 8.0 + space::SM + VOLUME_GROUP_W;
@@ -22,7 +23,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
     // El centro y la derecha tienen ancho propio (lo que necesitan); la pista actual toma el resto
     // y trunca su texto, así nada se encima aunque la ventana sea angosta.
     let center_w = (full.width() * 0.4).clamp(CENTER_MIN_W, 460.0);
-    let spare = full.width() - center_w - RIGHT_W - 2.0 * space::LG - LEFT_MIN_W;
+    let spare = full.width() - center_w - RIGHT_W - 2.0 * space::LG - LEFT_COMFY_W;
     let show_viz = spare >= VIZ_W + space::MD;
     let right_w = if show_viz { RIGHT_W + space::MD + VIZ_W } else { RIGHT_W };
     let side = ((full.width() - center_w - 2.0 * space::LG) / 2.0).max(right_w);
