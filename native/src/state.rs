@@ -1,6 +1,6 @@
 use crate::audio::AudioPlayer;
 use crate::library::{scan_music_folder, select_folder, Song};
-use crate::library_view::{self, LibraryView};
+use crate::library_view::{self, AlbumGroup, LibraryView};
 use crate::lyrics::{self, Lyrics};
 use crate::mpris::MprisMsg;
 use crate::persistence::{load_playback_state, save_playback_state, PlaybackState};
@@ -12,6 +12,7 @@ use std::sync::Arc;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActiveTab {
     All,
+    Albums,
     Artists,
 }
 
@@ -77,6 +78,11 @@ pub struct ArtistGroup {
     pub representative_cover: Option<String>,
 }
 
+/// Un álbum abierto filtra también por su artista (el nombre de álbum puede repetirse).
+fn artist_filter<'a>(artist: &'a Option<String>, album: &'a Option<(String, String)>) -> Option<&'a str> {
+    artist.as_deref().or(album.as_ref().map(|(_, a)| a.as_str()))
+}
+
 fn shuffle_vec(items: &mut Vec<Song>) {
     items.shuffle(&mut rand::thread_rng());
 }
@@ -103,6 +109,11 @@ pub struct AppState {
 
     pub active_tab: ActiveTab,
     pub selected_artist: Option<String>,
+    /// (álbum, artista) del álbum abierto en la pestaña Álbumes.
+    pub selected_album: Option<(String, String)>,
+    pub show_queue: bool,
+    /// Pide que la barra superior enfoque el buscador en el próximo frame.
+    pub focus_search: bool,
 
     pub sort_field: SortField,
     pub sort_direction: SortDirection,
@@ -139,6 +150,9 @@ impl AppState {
             current_folder_path: None,
             active_tab: ActiveTab::All,
             selected_artist: None,
+            selected_album: None,
+            show_queue: false,
+            focus_search: false,
             sort_field: SortField::Title,
             sort_direction: SortDirection::Asc,
             artist_sort_order: SortDirection::Asc,
@@ -223,7 +237,8 @@ impl AppState {
         library_view::filter_sort(
             &self.songs,
             &self.search_query,
-            self.selected_artist.as_deref(),
+            artist_filter(&self.selected_artist, &self.selected_album),
+            self.selected_album.as_ref().map(|(album, _)| album.as_str()),
             self.sort_field,
             self.sort_direction,
         )
@@ -237,10 +252,15 @@ impl AppState {
             &self.songs,
             self.songs_version,
             &self.search_query,
-            self.selected_artist.as_deref(),
+            artist_filter(&self.selected_artist, &self.selected_album),
+            self.selected_album.as_ref().map(|(album, _)| album.as_str()),
             self.sort_field,
             self.sort_direction,
         )
+    }
+
+    pub fn album_groups(&mut self) -> Arc<Vec<AlbumGroup>> {
+        self.view.albums(&self.songs, self.songs_version, &self.search_query, self.artist_sort_order)
     }
 
     pub fn artist_groups(&mut self) -> Arc<Vec<ArtistGroup>> {
@@ -483,6 +503,7 @@ impl AppState {
     pub fn select_tab(&mut self, tab: ActiveTab) {
         self.active_tab = tab;
         self.selected_artist = None;
+        self.selected_album = None;
     }
 
     pub fn select_folder_and_scan(&mut self) {
