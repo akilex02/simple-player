@@ -8,7 +8,7 @@ use crate::viz::VizFrame;
 use eframe::egui::{self, RichText};
 
 pub const HEIGHT: f32 = 96.0;
-const VOLUME_GROUP_W: f32 = 216.0;
+const VOLUME_GROUP_W: f32 = 140.0;
 
 /// Barra inferior de tres columnas: pista actual · transporte y progreso ·
 /// volumen, cola, letras y pantalla completa (con mini visualizador).

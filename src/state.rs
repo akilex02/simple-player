@@ -133,7 +133,6 @@ pub struct AppState {
 
     pub is_shuffle: bool,
     pub repeat_mode: RepeatMode,
-    pub is_normalize_volume: bool,
 
     pub is_fullscreen: bool,
     pub show_lyrics: bool,
@@ -174,7 +173,6 @@ impl AppState {
             artist_sort_order: SortDirection::Asc,
             is_shuffle: false,
             repeat_mode: RepeatMode::Off,
-            is_normalize_volume: true,
             is_fullscreen: false,
             show_lyrics: false,
             lyrics: None,
@@ -498,11 +496,6 @@ impl AppState {
     pub fn toggle_repeat_mode(&mut self) {
         self.repeat_mode = self.repeat_mode.next();
         self.persist();
-    }
-
-    pub fn toggle_normalize_volume(&mut self) {
-        self.is_normalize_volume = !self.is_normalize_volume;
-        let _ = self.audio.set_normalization(self.is_normalize_volume);
     }
 
     pub fn set_sort(&mut self, field: SortField) {

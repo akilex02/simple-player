@@ -47,19 +47,6 @@ impl AudioPlayer {
         Ok(())
     }
 
-    pub fn set_normalization(&self, enabled: bool) -> Result<(), String> {
-        let player = self.inner.lock().map_err(|e| e.to_string())?;
-        let pipeline = player.pipeline();
-        match build_audio_filter_bin(enabled) {
-            Some(filter) => pipeline.set_property("audio-filter", &filter),
-            None => {
-                let null_elem: Option<&gst::Element> = None;
-                pipeline.set_property("audio-filter", null_elem);
-            }
-        }
-        Ok(())
-    }
-
     /// Posición con resolución de nanosegundos, sin bloquear: `None` si otro
     /// hilo (MPRIS, atajos) tiene el lock o no hay posición todavía.
     pub fn try_position_secs(&self) -> Option<f64> {
@@ -89,28 +76,16 @@ fn path_to_uri(path: &str) -> String {
     }
 }
 
-/// Construye el bin de `audio-filter`: siempre incluye `spectrum` (analizador FFT
-/// para el visualizador) y, si se pide y el plugin de replaygain existe, lo
-/// encadena con `rgvolume ! rglimiter` para la normalización de volumen.
-pub fn build_audio_filter_bin(normalize: bool) -> Option<gst::Bin> {
-    let has_spectrum = gst::ElementFactory::find("spectrum").is_some();
-    let has_replaygain = normalize
-        && gst::ElementFactory::find("rgvolume").is_some()
-        && gst::ElementFactory::find("rglimiter").is_some();
+/// Construye el bin de `audio-filter`: el analizador FFT `spectrum` que alimenta
+/// al visualizador. `None` si el plugin no está instalado (el visualizador se oculta).
+pub fn build_audio_filter_bin() -> Option<gst::Bin> {
+    gst::ElementFactory::find("spectrum")?;
 
     // 1024 bandas (~21 Hz cada una) para tener resolución en graves; la UI las
     // agrupa en barras logarítmicas. 25 ms = 40 mensajes/seg, que el visualizador
     // interpola según su `stream-time`.
-    let spectrum_desc = "spectrum name=spectrum bands=1024 interval=25000000 message-magnitude=true threshold=-60";
-
-    let desc = match (has_spectrum, has_replaygain) {
-        (true, true) => format!("{spectrum_desc} ! rgvolume fallback-gain=0.0 ! rglimiter"),
-        (true, false) => spectrum_desc.to_string(),
-        (false, true) => "rgvolume fallback-gain=0.0 ! rglimiter".to_string(),
-        (false, false) => return None,
-    };
-
-    gst::parse::bin_from_description(&desc, true).ok()
+    let desc = "spectrum name=spectrum bands=1024 interval=25000000 message-magnitude=true threshold=-60";
+    gst::parse::bin_from_description(desc, true).ok()
 }
 
 /// Por defecto gst-player salta al keyframe más cercano: en algunos formatos
@@ -123,7 +98,7 @@ fn enable_accurate_seek(player: &gst_player::Player) {
 
 /// Inicializa GStreamer, crea el `Player`, selecciona el audio-sink que de
 /// verdad puede abrir el dispositivo, e instala el audio-filter inicial
-/// (spectrum + normalización). Sin los env vars de WebKit — no aplican sin WebView.
+/// (spectrum).
 pub fn init() -> AudioPlayer {
     // Configure GStreamer plugin search paths
     let candidate_paths = [
@@ -180,7 +155,7 @@ pub fn init() -> AudioPlayer {
         eprintln!("[GStreamer Error] {}", err);
     });
 
-    if let Some(filter) = build_audio_filter_bin(true) {
+    if let Some(filter) = build_audio_filter_bin() {
         pipeline.set_property("audio-filter", &filter);
     }
 

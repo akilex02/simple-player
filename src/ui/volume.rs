@@ -1,4 +1,3 @@
-use super::widgets::chip::chip;
 use super::widgets::icon_button::IconButton;
 use super::widgets::slider::PillSlider;
 use super::Size;
@@ -13,10 +12,6 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, size: Size) {
     };
 
     ui.horizontal_centered(|ui| {
-        if chip(ui, "NORM", state.is_normalize_volume).on_hover_text("Normalización de audio").clicked() {
-            state.toggle_normalize_volume();
-        }
-
         let muted = state.is_muted || state.volume == 0.0;
         let icon = if muted {
             icons::SPEAKER_X

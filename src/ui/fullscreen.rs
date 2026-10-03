@@ -179,7 +179,7 @@ impl FullscreenView {
         let transport_center_y = center.top() + TRANSPORT_TOP + TRANSPORT_H / 2.0;
         let vol = egui::Rect::from_center_size(egui::pos2(inner.right() - 125.0, transport_center_y), egui::vec2(250.0, 40.0));
         let mut volume_ui = ui.new_child(egui::UiBuilder::new().max_rect(vol).layout(egui::Layout::right_to_left(egui::Align::Center)));
-        volume_ui.allocate_ui_with_layout(egui::vec2(216.0, 34.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        volume_ui.allocate_ui_with_layout(egui::vec2(140.0, 34.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             volume::show(ui, state, Size::Compact);
         });
     }
