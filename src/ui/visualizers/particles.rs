@@ -1,4 +1,3 @@
-#![allow(dead_code)] // se quita al conectar (Tarea 7)
 //! Dibujo de los modos de partículas: un solo `Mesh` por frame (una draw call).
 use super::VisualizerMode;
 use crate::viz::particles::{links, ParticleField, V2};
@@ -111,6 +110,7 @@ pub fn mesh_for(mode: VisualizerMode, field: &ParticleField, accent: egui::Color
         _ => egui::Mesh::default(),
     };
     mesh.append(dots_mesh(field, accent));
+    debug_assert!(mesh.vertices.len() <= MAX_MESH_VERTICES, "el modo {mode:?} rebasa el tope de vértices");
     mesh
 }
 

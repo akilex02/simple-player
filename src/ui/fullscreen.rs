@@ -1,6 +1,7 @@
 use super::backdrop::Backdrop;
 use super::lyrics_view::LyricsView;
 use super::textures::TextureCache;
+use super::visualizers::particles as particle_draw;
 use super::visualizers::{self, VisualizerMode};
 use super::widgets::chip::chip;
 use super::widgets::cover::paint_cover;
@@ -9,6 +10,8 @@ use super::widgets::icon_button::IconButton;
 use super::{progress, transport, volume, Size};
 use crate::state::AppState;
 use crate::theme::{self, icons, text, with_alpha};
+use crate::viz::bands::{BandAnalyzer, Bands};
+use crate::viz::particles::{Anchor, ParticleField, Pull, Rect2, V2};
 use crate::viz::VizFrame;
 use eframe::egui::{self, RichText};
 
@@ -41,12 +44,35 @@ struct Geometry {
 pub struct FullscreenView {
     pub mode: VisualizerMode,
     lyrics: LyricsView,
+    bands: BandAnalyzer,
+    bands_now: Bands,
+    /// Campo de partículas del modo actual (se recrea al cambiar de modo).
+    field: Option<(VisualizerMode, ParticleField)>,
+    /// `true` atrae al cursor; `G` alterna con repeler.
+    attract: bool,
+    mesh_vertices: usize,
 }
 
 impl Default for FullscreenView {
     fn default() -> Self {
-        Self { mode: VisualizerMode::Bars, lyrics: LyricsView::default() }
+        Self {
+            mode: VisualizerMode::Bars,
+            lyrics: LyricsView::default(),
+            bands: BandAnalyzer::new(),
+            bands_now: Bands::default(),
+            field: None,
+            attract: true,
+            mesh_vertices: 0,
+        }
     }
+}
+
+/// Semilla fija: la disposición inicial es la misma en cada arranque.
+const FIELD_SEED: u64 = 0x5EED_F1E1D;
+
+/// ¿El puntero está sobre algo con lo que se interactúa o que no debe "atraer"?
+fn over_control(pos: egui::Pos2, blockers: &[egui::Rect]) -> bool {
+    blockers.iter().any(|r| r.contains(pos))
 }
 
 impl FullscreenView {
@@ -72,14 +98,17 @@ impl FullscreenView {
                 ui.set_opacity(anim);
                 ui.set_clip_rect(rect);
                 // Reclama toda la ventana para que nada de abajo reciba el mouse.
-                ui.allocate_exact_size(rect.size(), egui::Sense::click_and_drag());
+                let (_, background) = ui.allocate_exact_size(rect.size(), egui::Sense::click_and_drag());
 
                 let painter = ui.painter().clone();
                 painter.rect_filled(rect, 0.0, theme::BG_BASE);
                 backdrop.paint(textures, &painter, rect, ctx.input(|i| i.time) as f32);
                 painter.rect_filled(rect, 0.0, egui::Color32::from_black_alpha(70));
 
-                self.paint_visualizer(ui, rect, viz, anim, state.show_lyrics);
+                let geo = self.geometry(ctx, rect, state.show_lyrics);
+                let pull = self.pull_from_input(ctx, &background, &geo, state.show_lyrics);
+                self.update_field(ctx, rect, &geo, viz, state.is_playing, pull);
+                self.paint_visualizer(ui, rect, viz, anim, pull);
                 self.content(ui, rect, state, textures, anim);
             });
     }
@@ -107,7 +136,70 @@ impl FullscreenView {
         Geometry { inner, top, controls, body, left, cover_rect, lyrics_anim }
     }
 
-    fn paint_visualizer(&self, ui: &mut egui::Ui, rect: egui::Rect, viz: &VizFrame, anim: f32, show_lyrics: bool) {
+    pub fn mesh_vertices(&self) -> usize {
+        self.mesh_vertices
+    }
+
+    /// Clic izquierdo mantenido sobre el fondo; no cuenta sobre widgets (ya capturan el clic)
+    /// ni sobre portada, información, controles, encabezado o letras.
+    fn pull_from_input(&self, ctx: &egui::Context, background: &egui::Response, geo: &Geometry, show_lyrics: bool) -> Option<Pull> {
+        self.mode.field_kind()?;
+        let (down, pos) = ctx.input(|i| (i.pointer.primary_down(), i.pointer.hover_pos()));
+        let pos = pos?;
+        if !down || !background.is_pointer_button_down_on() {
+            return None;
+        }
+        let info = egui::Rect::from_min_max(
+            egui::pos2(geo.left.left(), geo.cover_rect.bottom() + 24.0),
+            egui::pos2(geo.left.right(), geo.cover_rect.bottom() + 120.0),
+        );
+        let lyrics = egui::Rect::from_min_max(egui::pos2(geo.left.right() + 56.0, geo.body.top()), geo.body.max);
+        let mut blockers = vec![geo.cover_rect, info, geo.controls, geo.top];
+        if show_lyrics || geo.lyrics_anim > 0.01 {
+            blockers.push(lyrics);
+        }
+        if over_control(pos, &blockers) {
+            return None;
+        }
+        Some(Pull { pos: V2::new(pos.x, pos.y), attract: self.attract })
+    }
+
+    /// Bandas, creación/redimensión del campo y un paso de simulación (solo si suena).
+    fn update_field(&mut self, ctx: &egui::Context, rect: egui::Rect, geo: &Geometry, viz: &VizFrame, playing: bool, pull: Option<Pull>) {
+        let dt = ctx.input(|i| i.stable_dt).min(0.1);
+        self.bands_now = self.bands.update(&viz.bars, dt);
+        if ctx.input(|i| i.key_pressed(egui::Key::G)) {
+            self.attract = !self.attract;
+        }
+        let Some(kind) = self.mode.field_kind() else {
+            self.field = None;
+            self.mesh_vertices = 0;
+            return;
+        };
+        let bounds = Rect2::new(rect.left(), rect.top(), rect.right(), rect.bottom());
+        match &mut self.field {
+            Some((mode, field)) if *mode == self.mode => {
+                if field.bounds() != bounds {
+                    field.resize(bounds);
+                }
+            }
+            _ => {
+                self.field = Some((self.mode, ParticleField::new(kind, particle_draw::count_for(self.mode), bounds, FIELD_SEED)));
+            }
+        }
+        if playing {
+            let anchor = Anchor {
+                center: V2::new(geo.cover_rect.center().x, geo.cover_rect.center().y),
+                radius: geo.cover_rect.width() * 0.5,
+            };
+            let time = ctx.input(|i| i.time) as f32;
+            if let Some((_, field)) = &mut self.field {
+                field.step(dt, self.bands_now, anchor, pull, time);
+            }
+        }
+    }
+
+    fn paint_visualizer(&mut self, ui: &mut egui::Ui, rect: egui::Rect, viz: &VizFrame, anim: f32, pull: Option<Pull>) {
         let (area, opacity) = match self.mode {
             VisualizerMode::Off => return,
             VisualizerMode::Strip => {
@@ -122,9 +214,22 @@ impl FullscreenView {
         };
         let mut layer = ui.new_child(egui::UiBuilder::new().max_rect(area));
         layer.set_opacity(anim * opacity);
-        // El radial nace de la portada: mismo centro y arranca en su borde.
-        let cover = self.geometry(ui.ctx(), rect, show_lyrics).cover_rect;
-        visualizers::draw(&layer, area, viz, self.mode, cover);
+        let Some((_, field)) = self.field.as_ref().filter(|_| self.mode.field_kind().is_some()) else {
+            visualizers::draw(&layer, area, viz, self.mode);
+            return;
+        };
+        let accent = theme::accent(ui.ctx());
+        let mesh = particle_draw::mesh_for(self.mode, field, accent, self.bands_now.bass);
+        self.mesh_vertices = mesh.vertices.len();
+        let painter = layer.painter_at(area);
+        painter.add(egui::Shape::mesh(mesh));
+        if let Some(pull) = pull {
+            // Indicador del cursor: verde atrae, rojo repele; late con los graves.
+            let color = if pull.attract { egui::Color32::from_rgb(0, 255, 128) } else { egui::Color32::from_rgb(255, 40, 40) };
+            let radius = 36.0 + self.bands_now.bass * 30.0;
+            painter.circle_filled(egui::pos2(pull.pos.x, pull.pos.y), radius, color.gamma_multiply(0.18));
+            painter.circle_filled(egui::pos2(pull.pos.x, pull.pos.y), 3.0, color);
+        }
     }
 
     fn content(&mut self, ui: &mut egui::Ui, rect: egui::Rect, state: &mut AppState, textures: &mut TextureCache, anim: f32) {
@@ -143,7 +248,8 @@ impl FullscreenView {
                 state.toggle_lyrics_visibility();
             }
             ui.add_space(8.0);
-            if chip(ui, self.mode.label(), self.mode != VisualizerMode::Off).on_hover_text("Cambiar visualizador").clicked() {
+            let hint = if self.mode.field_kind().is_some() { "Cambiar visualizador · clic: atraer · G: atraer/repeler" } else { "Cambiar visualizador" };
+            if chip(ui, self.mode.label(), self.mode != VisualizerMode::Off).on_hover_text(hint).clicked() {
                 self.mode = self.mode.next();
             }
             ui.label(RichText::new(icons::WAVEFORM).size(text::LG).color(theme::TEXT_MUTED));
@@ -221,5 +327,21 @@ impl FullscreenView {
         volume_ui.allocate_ui_with_layout(egui::vec2(140.0, 34.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             volume::show(ui, state, Size::Compact);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn el_puntero_sobre_una_zona_bloqueada_no_atrae() {
+        let cover = egui::Rect::from_min_size(egui::pos2(100.0, 100.0), egui::vec2(200.0, 200.0));
+        let controls = egui::Rect::from_min_size(egui::pos2(0.0, 600.0), egui::vec2(800.0, 100.0));
+        let blockers = [cover, controls];
+        assert!(over_control(egui::pos2(150.0, 150.0), &blockers));
+        assert!(over_control(egui::pos2(400.0, 650.0), &blockers));
+        assert!(!over_control(egui::pos2(500.0, 300.0), &blockers));
+        assert!(!over_control(egui::pos2(500.0, 300.0), &[]));
     }
 }

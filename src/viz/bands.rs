@@ -1,4 +1,3 @@
-#![allow(dead_code)] // se quita al conectar el módulo (Tarea 7)
 //! Graves, medios y agudos a partir de las barras del visualizador.
 use super::engine::smooth;
 

@@ -335,6 +335,7 @@ impl eframe::App for App {
             &[
                 format!("Compensación latencia {:+.0} ms (F4 -10 / F5 +10)", self.viz_latency_secs * 1000.0),
                 format!("Texturas {tex_count} ({:.1} MB)", tex_bytes as f64 / 1_048_576.0),
+                format!("Visualizador {} vértices", self.fullscreen.mesh_vertices()),
             ],
         );
         self.perf.end_frame(Instant::now());

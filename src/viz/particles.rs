@@ -1,4 +1,3 @@
-#![allow(dead_code)] // se quita al conectar el módulo (Tarea 7)
 //! Física de partículas de los visualizadores. Sin egui: se prueba sin ventana.
 use super::bands::Bands;
 use std::collections::HashMap;
@@ -133,6 +132,8 @@ pub struct ParticleField {
     particles: Vec<Particle>,
     bounds: Rect2,
     rng: Rng,
+    /// Anillo y Osciloscopio nacen en su destino (en el primer paso) en vez de volar hacia él.
+    needs_snap: bool,
 }
 
 impl ParticleField {
@@ -144,7 +145,7 @@ impl ParticleField {
                 Particle { pos, vel: V2::new(rng.signed(2.0), rng.signed(2.0)), home: pos, size: rng.range(1.5, 3.0), tint: rng.unit() }
             })
             .collect();
-        Self { kind, particles, bounds, rng }
+        Self { kind, particles, bounds, rng, needs_snap: kind != FieldKind::Free }
     }
 
     #[cfg(test)]
@@ -182,6 +183,12 @@ impl ParticleField {
         }
         let k = (dt / FRAME).min(MAX_STEPS);
         self.update_homes(bands, anchor, time);
+        if std::mem::take(&mut self.needs_snap) {
+            for p in &mut self.particles {
+                p.pos = p.home;
+                p.vel = V2::default();
+            }
+        }
         let spring = spring_constant(pull.is_some());
         let damping = FRICTION.powf(k);
         let (bounds, kind) = (self.bounds, self.kind);
@@ -609,5 +616,24 @@ mod tests {
         found.sort_by_key(|l| (l.a, l.b));
         found.dedup_by_key(|l| (l.a, l.b));
         assert_eq!(found.len(), brute, "hay pares repetidos");
+    }
+
+    #[test]
+    fn el_anillo_y_el_osciloscopio_nacen_ya_formados() {
+        for kind in [FieldKind::Ring, FieldKind::Wave] {
+            let mut field = ParticleField::new(kind, 360, bounds(), 3);
+            field.step(FRAME, Bands::default(), anchor(), None, 0.0);
+            let worst = field.particles().iter().map(|p| p.pos.dist(p.home)).fold(0.0, f32::max);
+            assert!(worst < 3.0, "{kind:?}: la peor partícula está a {worst} px de su destino");
+        }
+    }
+
+    #[test]
+    fn el_modo_libre_no_se_acomoda_en_el_primer_paso() {
+        let mut field = ParticleField::new(FieldKind::Free, 100, bounds(), 3);
+        let before: Vec<V2> = field.particles().iter().map(|p| p.pos).collect();
+        field.step(FRAME, Bands::default(), anchor(), None, 0.0);
+        let moved = field.particles().iter().zip(&before).filter(|(p, b)| p.pos != **b).count();
+        assert!(moved > 50, "solo {moved} de 100 se movieron por su velocidad");
     }
 }

@@ -1,6 +1,5 @@
 pub mod bars;
 pub mod particles;
-pub mod radial;
 
 use crate::viz::particles::FieldKind;
 use crate::viz::VizFrame;
@@ -81,13 +80,11 @@ fn fold(text: &str) -> String {
         .collect()
 }
 
-/// `cover` es el rectángulo de la portada; el anillo usa el radial hasta que las partículas se conecten (Tarea 7).
-pub fn draw(ui: &egui::Ui, rect: egui::Rect, frame: &VizFrame, mode: VisualizerMode, cover: egui::Rect) {
+/// Barras y franja; los modos de partículas se dibujan con `particles::mesh_for`.
+pub fn draw(ui: &egui::Ui, rect: egui::Rect, frame: &VizFrame, mode: VisualizerMode) {
     let painter = ui.painter_at(rect);
-    match mode {
-        VisualizerMode::Bars | VisualizerMode::Strip => bars::draw(&painter, rect, frame),
-        VisualizerMode::Ring => radial::draw(&painter, frame, cover),
-        VisualizerMode::Particles | VisualizerMode::Constellation | VisualizerMode::Wave | VisualizerMode::Off => {}
+    if matches!(mode, VisualizerMode::Bars | VisualizerMode::Strip) {
+        bars::draw(&painter, rect, frame);
     }
 }
 
