@@ -1,5 +1,6 @@
-use super::model::{EventRow, PlayEvent, TopEntry, Totals};
+use super::model::{EventRow, PlayEvent, SongSnapshot, TopEntry, Totals};
 use rusqlite::{params, Connection, Statement};
+use std::collections::HashSet;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -12,6 +13,14 @@ impl From<rusqlite::Error> for StoreError {
 }
 
 pub type StoreResult<T> = Result<T, StoreError>;
+
+/// Cuántos eventos entraron y cuántos ya estaban al importar.
+#[allow(dead_code)] // se conecta en la Tarea 9
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ImportReport {
+    pub imported: usize,
+    pub duplicates: usize,
+}
 
 pub struct Store {
     conn: Connection,
@@ -114,6 +123,64 @@ impl Store {
             }
         }
         tx.commit()?;
+        Ok(())
+    }
+
+    /// Todos los eventos, ordenados por fin (para exportar).
+    #[allow(dead_code)] // se conecta en la Tarea 9
+    pub fn all_events(&self) -> StoreResult<Vec<PlayEvent>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT started_at, ended_at, listened_ms, song_path, title, artist, album, duration_ms FROM play_events ORDER BY ended_at, id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(PlayEvent {
+                started_at: r.get(0)?,
+                ended_at: r.get(1)?,
+                listened_ms: r.get::<_, i64>(2)? as u64,
+                song: SongSnapshot {
+                    path: r.get(3)?,
+                    title: r.get(4)?,
+                    artist: r.get(5)?,
+                    album: r.get(6)?,
+                    duration_ms: r.get::<_, i64>(7)? as u64,
+                },
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Inserta los eventos que no estén ya (mismo inicio, fin y ruta) en **una sola transacción**:
+    /// si algo falla, no queda ninguno.
+    #[allow(dead_code)] // se conecta en la Tarea 9
+    pub fn import_events(&mut self, events: &[PlayEvent]) -> StoreResult<ImportReport> {
+        let tx = self.conn.transaction()?;
+        let mut report = ImportReport::default();
+        {
+            let mut known: HashSet<(i64, i64, String)> = {
+                let mut stmt = tx.prepare("SELECT started_at, ended_at, song_path FROM play_events")?;
+                let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))?;
+                rows.collect::<Result<_, _>>()?
+            };
+            let mut insert = tx.prepare(INSERT_SQL)?;
+            for event in events {
+                let Some((started, ended)) = Self::normalized(event) else { continue };
+                if !known.insert((started, ended, event.song.path.clone())) {
+                    report.duplicates += 1;
+                    continue;
+                }
+                Self::execute_insert(&mut insert, event, started, ended)?;
+                report.imported += 1;
+            }
+        }
+        tx.commit()?;
+        Ok(report)
+    }
+
+    /// Borra todo el historial y recupera el espacio.
+    #[allow(dead_code)] // se conecta en la Tarea 9
+    pub fn clear(&mut self) -> StoreResult<()> {
+        self.conn.execute("DELETE FROM play_events", [])?;
+        self.conn.execute_batch("VACUUM")?;
         Ok(())
     }
 
@@ -361,5 +428,62 @@ mod tests {
         for ext in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
         }
+    }
+
+    fn ev_simple(started: i64, ended: i64, listened: u64, path: &str) -> PlayEvent {
+        ev(path, "T", "A", "B", started, ended, listened)
+    }
+
+    #[test]
+    fn all_events_devuelve_lo_guardado_en_orden() {
+        let mut store = Store::open_in_memory().unwrap();
+        store.insert_batch(&[ev_simple(100, 200, 100, "/b"), ev_simple(10, 20, 10, "/a")]).unwrap();
+        let all = store.all_events().unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].song.path, "/a", "ordenados por fin");
+    }
+
+    #[test]
+    fn importar_en_una_base_vacia_inserta_todo() {
+        let mut store = Store::open_in_memory().unwrap();
+        let report = store.import_events(&[ev_simple(10, 20, 10, "/a"), ev_simple(30, 40, 10, "/b")]).unwrap();
+        assert_eq!((report.imported, report.duplicates), (2, 0));
+        assert_eq!(store.count().unwrap(), 2);
+    }
+
+    #[test]
+    fn importar_dos_veces_no_duplica() {
+        let mut store = Store::open_in_memory().unwrap();
+        let events = [ev_simple(10, 20, 10, "/a"), ev_simple(30, 40, 10, "/b")];
+        store.import_events(&events).unwrap();
+        let again = store.import_events(&events).unwrap();
+        assert_eq!((again.imported, again.duplicates), (0, 2));
+        assert_eq!(store.count().unwrap(), 2);
+    }
+
+    #[test]
+    fn los_repetidos_dentro_del_mismo_archivo_se_cuentan_como_duplicados() {
+        let mut store = Store::open_in_memory().unwrap();
+        let report = store.import_events(&[ev_simple(10, 20, 10, "/a"), ev_simple(10, 20, 10, "/a")]).unwrap();
+        assert_eq!((report.imported, report.duplicates), (1, 1));
+    }
+
+    #[test]
+    fn un_fallo_a_mitad_del_lote_no_deja_eventos_parciales() {
+        let mut store = Store::open_in_memory().unwrap();
+        // `u64::MAX` como i64 es -1 y viola CHECK (listened_ms > 0) en pleno lote.
+        let result = store.import_events(&[ev_simple(10, 20, 10, "/a"), ev_simple(30, 40, u64::MAX, "/mala"), ev_simple(50, 60, 10, "/c")]);
+        assert!(result.is_err());
+        assert_eq!(store.count().unwrap(), 0, "la transacción debe revertirse entera");
+    }
+
+    #[test]
+    fn clear_deja_la_tabla_vacia() {
+        let mut store = Store::open_in_memory().unwrap();
+        store.insert_batch(&[ev_simple(10, 20, 10, "/a")]).unwrap();
+        store.clear().unwrap();
+        assert_eq!(store.count().unwrap(), 0);
+        store.insert(&ev_simple(10, 20, 10, "/a")).unwrap();
+        assert_eq!(store.count().unwrap(), 1, "sigue funcionando después de limpiar");
     }
 }
