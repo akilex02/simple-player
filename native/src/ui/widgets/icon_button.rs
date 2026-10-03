@@ -57,8 +57,8 @@ impl<'a> IconButton<'a> {
         let painter = ui.painter();
 
         if self.primary || hover > 0.0 {
-            let glow = if self.primary { 0.55 } else { 0.35 * hover };
-            painter.add(radial_glow_mesh(rect.center(), radius * 1.9, with_alpha(self.accent, (glow * 140.0) as u8), 28));
+            let (glow, reach) = if self.primary { (0.4 + 0.15 * hover, 1.4 + 0.1 * hover) } else { (0.35 * hover, 1.5) };
+            painter.add(radial_glow_mesh(rect.center(), radius * reach, with_alpha(self.accent, (glow * 140.0) as u8), 28));
         }
 
         let (fill, icon_color) = if self.primary {
