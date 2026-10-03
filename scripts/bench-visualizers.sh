@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Mide CPU y GPU de cada visualizador de la pantalla completa y falla si alguno rebasa los límites.
+# Variables: SECS (ventana de medición, 10), CPU_MAX (% de un núcleo, 20), GPU_MAX (% de la GPU, 30), BIN.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+SECS="${SECS:-10}"
+CPU_MAX="${CPU_MAX:-20}"
+GPU_MAX="${GPU_MAX:-30}"
+BIN="${BIN:-target/release/simple-player}"
+MODES=("Barras" "Anillo" "Partículas" "Constelación" "Osciloscopio" "Franja")
+
+[ -x "$BIN" ] || cargo build --release
+
+over() { awk -v v="$1" -v max="$2" 'BEGIN { exit !(v > max) }'; }
+
+fail=0
+printf '%-14s %8s %8s %10s\n' "Modo" "CPU %" "GPU %" "Vértices"
+for mode in "${MODES[@]}"; do
+  line=$("$BIN" --allow-multiple --no-hotkeys --fullscreen --viz "$mode" --play --bench "$SECS" 2>/dev/null | grep '^\[bench\]' || true)
+  cpu=$(grep -oP 'CPU \K[0-9.]+' <<<"$line" || echo "n/d")
+  gpu=$(grep -oP 'GPU \K[0-9.]+' <<<"$line" || echo "n/d")
+  verts=$(grep -oP '\| \K[0-9]+(?= vértices)' <<<"$line" || echo "n/d")
+  printf '%-14s %8s %8s %10s\n' "$mode" "$cpu" "$gpu" "$verts"
+  if [[ "$cpu" != "n/d" ]] && over "$cpu" "$CPU_MAX"; then echo "  ✗ CPU $cpu % supera $CPU_MAX %"; fail=1; fi
+  if [[ "$gpu" != "n/d" ]] && over "$gpu" "$GPU_MAX"; then echo "  ✗ GPU $gpu % supera $GPU_MAX %"; fail=1; fi
+done
+exit "$fail"

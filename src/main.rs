@@ -1,5 +1,6 @@
 mod audio;
 mod events;
+mod gpu_probe;
 mod hotkeys;
 mod library;
 mod library_view;
@@ -230,7 +231,7 @@ impl App {
         // Sondeo lento: no debe alterar lo que se mide.
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
         // (el conteo de frames solo incluye los que ya se dibujan por otras razones)
-        if let Some(report) = bench.poll() {
+        if let Some(report) = bench.poll(self.fullscreen.mesh_vertices()) {
             println!("{report}");
             self.bench = None;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -432,6 +433,7 @@ struct Bench {
     from: Option<u64>,
     frames: u64,
     frames_from: u64,
+    gpu: gpu_probe::GpuProbe,
 }
 
 impl Bench {
@@ -440,7 +442,7 @@ impl Bench {
     const CLK_TCK: f64 = 100.0;
 
     fn new(secs: f64) -> Self {
-        Self { secs, started: Instant::now(), from: None, frames: 0, frames_from: 0 }
+        Self { secs, started: Instant::now(), from: None, frames: 0, frames_from: 0, gpu: gpu_probe::GpuProbe::start() }
     }
 
     fn cpu_ticks() -> u64 {
@@ -451,12 +453,13 @@ impl Bench {
         tick(11) + tick(12)
     }
 
-    fn poll(&mut self) -> Option<String> {
+    fn poll(&mut self, mesh_vertices: usize) -> Option<String> {
         self.frames += 1;
         let elapsed = self.started.elapsed().as_secs_f64();
         match self.from {
             None if elapsed >= Self::WARMUP => {
                 self.from = Some(Self::cpu_ticks());
+                self.gpu.begin_window();
                 self.frames_from = self.frames;
                 None
             }
@@ -464,10 +467,12 @@ impl Bench {
                 let used = (Self::cpu_ticks() - from) as f64 / Self::CLK_TCK;
                 let frames = (self.frames - self.frames_from).max(1) as f64;
                 Some(format!(
-                    "[bench] CPU {:.1} % | {:.0} fps | {:.2} ms de CPU por frame",
+                    "[bench] CPU {:.1} % | {:.0} fps | {:.2} ms de CPU por frame | {} | {} vértices/frame",
                     used / self.secs * 100.0,
                     frames / self.secs,
-                    used / frames * 1000.0
+                    used / frames * 1000.0,
+                    self.gpu.report(),
+                    mesh_vertices
                 ))
             }
             _ => None,
