@@ -37,11 +37,12 @@ impl VisualizerMode {
     }
 }
 
-pub fn draw(ui: &egui::Ui, rect: egui::Rect, frame: &VizFrame, mode: VisualizerMode) {
+/// `cover` es el rectángulo de la portada; el modo radial se dibuja a su alrededor.
+pub fn draw(ui: &egui::Ui, rect: egui::Rect, frame: &VizFrame, mode: VisualizerMode, cover: egui::Rect) {
     let painter = ui.painter_at(rect);
     match mode {
         VisualizerMode::Bars => bars::draw(&painter, rect, frame),
-        VisualizerMode::Radial => radial::draw(&painter, rect, frame),
+        VisualizerMode::Radial => radial::draw(&painter, frame, cover),
         VisualizerMode::Glow => glow::draw(&painter, rect, frame),
         VisualizerMode::Strip => bars::draw(&painter, rect, frame),
         VisualizerMode::Off => {}

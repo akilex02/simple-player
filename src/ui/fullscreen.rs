@@ -25,6 +25,16 @@ const CONTROLS_GAP: f32 = 2.0;
 const PANEL_PAD_X: f32 = 14.0;
 const PANEL_PAD_Y: f32 = 8.0;
 
+struct Geometry {
+    inner: egui::Rect,
+    top: egui::Rect,
+    controls: egui::Rect,
+    body: egui::Rect,
+    left: egui::Rect,
+    cover_rect: egui::Rect,
+    lyrics_anim: f32,
+}
+
 /// Pantalla completa "Ahora suena": un overlay que aparece y desaparece con
 /// fundido sobre la app. Portada grande, fondo desenfocado, visualizador como
 /// capa (o franja) y letras estilo Apple Music a la derecha.
@@ -69,12 +79,35 @@ impl FullscreenView {
                 backdrop.paint(textures, &painter, rect, ctx.input(|i| i.time) as f32);
                 painter.rect_filled(rect, 0.0, egui::Color32::from_black_alpha(70));
 
-                self.paint_visualizer(ui, rect, viz, anim);
+                self.paint_visualizer(ui, rect, viz, anim, state.show_lyrics);
                 self.content(ui, rect, state, textures, anim);
             });
     }
 
-    fn paint_visualizer(&self, ui: &mut egui::Ui, rect: egui::Rect, viz: &VizFrame, anim: f32) {
+    /// Zonas de la pantalla; las comparten el contenido y el visualizador (el radial se centra en la portada).
+    fn geometry(&self, ctx: &egui::Context, rect: egui::Rect, show_lyrics: bool) -> Geometry {
+        let inner = rect.shrink2(egui::vec2(56.0, BOTTOM_MARGIN));
+        let top = egui::Rect::from_min_size(inner.min, egui::vec2(inner.width(), 44.0));
+        let controls = egui::Rect::from_min_max(egui::pos2(inner.left(), inner.bottom() - CONTROLS_H), inner.max);
+        // La franja del visualizador ocupa su propio espacio sobre los controles.
+        let strip_space = if self.mode == VisualizerMode::Strip { STRIP_H + 12.0 } else { 0.0 };
+        let body = egui::Rect::from_min_max(
+            egui::pos2(inner.left(), top.bottom() + 8.0),
+            egui::pos2(inner.right(), controls.top() - 8.0 - strip_space),
+        );
+
+        let lyrics_anim = ctx.animate_bool_with_time(egui::Id::new("fullscreen_lyrics"), show_lyrics, 0.3);
+        let left_w = body.width() + (body.width() * 0.42 - body.width()) * lyrics_anim;
+        let left = egui::Rect::from_min_size(body.min, egui::vec2(left_w, body.height()));
+
+        let cover_size = (left_w * 0.78).min(body.height() * 0.62).clamp(180.0, 460.0);
+        let block_h = cover_size + 24.0 + 96.0;
+        let top_y = (left.center().y - block_h / 2.0).max(left.top());
+        let cover_rect = egui::Rect::from_min_size(egui::pos2(left.center().x - cover_size / 2.0, top_y), egui::vec2(cover_size, cover_size));
+        Geometry { inner, top, controls, body, left, cover_rect, lyrics_anim }
+    }
+
+    fn paint_visualizer(&self, ui: &mut egui::Ui, rect: egui::Rect, viz: &VizFrame, anim: f32, show_lyrics: bool) {
         let (area, opacity) = match self.mode {
             VisualizerMode::Off => return,
             VisualizerMode::Strip => {
@@ -89,21 +122,15 @@ impl FullscreenView {
         };
         let mut layer = ui.new_child(egui::UiBuilder::new().max_rect(area));
         layer.set_opacity(anim * opacity);
-        visualizers::draw(&layer, area, viz, self.mode);
+        // El radial nace de la portada: mismo centro y arranca en su borde.
+        let cover = self.geometry(ui.ctx(), rect, show_lyrics).cover_rect;
+        visualizers::draw(&layer, area, viz, self.mode, cover);
     }
 
     fn content(&mut self, ui: &mut egui::Ui, rect: egui::Rect, state: &mut AppState, textures: &mut TextureCache, anim: f32) {
         let ctx = ui.ctx().clone();
         let accent = theme::accent(&ctx);
-        let inner = rect.shrink2(egui::vec2(56.0, BOTTOM_MARGIN));
-        let top = egui::Rect::from_min_size(inner.min, egui::vec2(inner.width(), 44.0));
-        let controls = egui::Rect::from_min_max(egui::pos2(inner.left(), inner.bottom() - CONTROLS_H), inner.max);
-        // La franja del visualizador ocupa su propio espacio sobre los controles.
-        let strip_space = if self.mode == VisualizerMode::Strip { STRIP_H + 12.0 } else { 0.0 };
-        let body = egui::Rect::from_min_max(
-            egui::pos2(inner.left(), top.bottom() + 8.0),
-            egui::pos2(inner.right(), controls.top() - 8.0 - strip_space),
-        );
+        let Geometry { inner, top, controls, body, left, cover_rect, lyrics_anim } = self.geometry(&ctx, rect, state.show_lyrics);
 
         let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(top).layout(egui::Layout::left_to_right(egui::Align::Center)));
         bar.label(RichText::new("REPRODUCIENDO AHORA").font(theme::bold(text::XS)).color(accent));
@@ -123,14 +150,6 @@ impl FullscreenView {
         });
 
         let song = state.current_song().cloned();
-        let lyrics_anim = ctx.animate_bool_with_time(egui::Id::new("fullscreen_lyrics"), state.show_lyrics, 0.3);
-        let left_w = body.width() + (body.width() * 0.42 - body.width()) * lyrics_anim;
-        let left = egui::Rect::from_min_size(body.min, egui::vec2(left_w, body.height()));
-
-        let cover_size = (left_w * 0.78).min(body.height() * 0.62).clamp(180.0, 460.0);
-        let block_h = cover_size + 24.0 + 96.0;
-        let top_y = (left.center().y - block_h / 2.0).max(left.top());
-        let cover_rect = egui::Rect::from_min_size(egui::pos2(left.center().x - cover_size / 2.0, top_y), egui::vec2(cover_size, cover_size));
         let cover_path = song.as_ref().and_then(|s| s.cover_art.clone());
         paint_cover(ui, cover_rect, textures, &cover_path, 20.0, icons::MUSIC_NOTES, true);
 
