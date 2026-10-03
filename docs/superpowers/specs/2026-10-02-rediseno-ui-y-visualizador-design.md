@@ -1,9 +1,27 @@
 # Simple Player — Rediseño de UI y corrección del visualizador (egui)
 
-> **Estado:** borrador para revisión. Sin código modificado y sin commits.
-> **Rama de trabajo prevista:** `nueva-version` (hoy solo existe como `origin/nueva-version`; hay que crear la rama local antes de implementar).
-> **Fecha:** 2026-10-02
-> **Origen:** análisis de lectura de `origin/nueva-version @ 67a1ffc`. Las causas del tirón del visualizador son **hipótesis sin medir** (el análisis se hizo en Windows, la app corre en Linux). La Fase 0 las confirma o descarta antes de arreglar nada.
+> **Estado:** implementado (Fases 0 a 7) en `nueva-version`, validado por el usuario fase por fase. Ver "Estado de implementación" abajo.
+> **Rama de trabajo:** `nueva-version`.
+> **Fecha:** 2026-10-02 (estado actualizado el 2026-10-03).
+> **Origen:** análisis de lectura de `origin/nueva-version @ 67a1ffc`. Las hipótesis sobre el tirón del visualizador se midieron en la Fase 0 (ver abajo).
+> **Rutas:** el texto del documento menciona `native/…` porque así estaba el repositorio al escribirlo; en la Fase 7 `native/` pasó a ser la raíz (`Cargo.toml`, `src/`, `assets/`).
+
+## Estado de implementación
+
+| Fase | Estado | Notas |
+|---|---|---|
+| 0. Línea base | Hecha | HUD de rendimiento (F3), atajos globales con degradación suave e ícono incrustado. Medición: **H1 y H2 confirmadas** (el espectro llegaba en ráfagas, jitter p95 ≈ 110 ms); **H3 y H4 descartadas** (CPU por frame ≈ 0.2 ms, `state.tick()` ≈ 0.06 ms). |
+| 1. Visualizador fluido | Hecha | `PlaybackClock`, cola de espectro con `stream-time`, motor `viz/` (interpolación, 48 barras logarítmicas, AGC, suavizado, picos), degradado con `Mesh`. Validado por el usuario sin caídas. Posteriormente, el seek por clic en la letra se corrigió con posición fraccional, seek preciso y una guarda tras el seek. |
+| 2. Costo por frame | Hecha | `LibraryView` cacheada, repintado continuo solo si suena música, caché de carátulas con tamaños 64/256/512 px, LRU de 64 MB y cola priorizada, reposo por eventos (~0.2 % de CPU). **No se hizo** el reloj de posición atómico: la medición descartó la contención de mutex. |
+| 3. Sistema de diseño | Hecha | Tokens, Noto Sans + GTA Art Deco, íconos Phosphor, widgets de vidrio, fondo vivo con acento dinámico y galería (`--gallery`). Aprobada por el usuario. |
+| 4. Shell y pantallas | Hecha | Sidebar, barra superior con buscador, barra inferior de 3 columnas, Canciones con encabezado, Álbumes (nueva), Artistas, panel de cola y estados vacíos. |
+| 5. "Ahora suena" y letras | Hecha | Overlay con fundido, 5 modos de visualizador, letras con línea activa nítida, scroll suave y seek por clic. |
+| 6. Pulido | Hecha | Instancia única, atajos de teclado, foco visible, contraste AA verificado por test, animaciones finas, escala 1.5×/2× comprobada en X11. **No se hizo** el blur real con wgpu (opcional): el fondo desenfocado convenció. Se corrigió una regresión que mantenía el repintado continuo en reposo. |
+| 7. Empaquetado y limpieza | Hecha, con pendientes | Código de Tauri/React eliminado, `native/` movido a la raíz, README reescrito, compilación sin avisos. El script de AppImage y el PKGBUILD se adaptaron pero **el AppImage no se ha construido** y el PKGBUILD conserva la URL y el hash del AppImage anterior hasta que se publique uno nuevo. |
+
+**Decisiones abiertas de §10, resueltas:** se mantuvo egui/eframe 0.29; íconos con `egui-phosphor` 0.7.3; fuente de interfaz Noto Sans; renderer Glow por defecto; el diseño visual se validó con la galería de la Fase 3 en lugar de mockups previos; el documento ya está versionado en `nueva-version`.
+
+**Pendientes conocidos:** construir y probar el AppImage y actualizar el hash del PKGBUILD; verificar la escala fraccional en Wayland real (solo se probó en X11).
 
 ---
 
