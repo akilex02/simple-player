@@ -1,6 +1,6 @@
 # Simple Player — Estadísticas de escucha (SQLite)
 
-> **Estado:** diseño aprobado por sección en conversación; pendiente de revisión del documento escrito.
+> **Estado:** implementado en `nueva-version`; falta la aceptación manual del usuario (criterios 2 y 3 con la app normal).
 > **Rama de trabajo:** `nueva-version` (sin push ni merge por ahora).
 > **Fecha:** 2026-10-03
 > **Referencia:** el sistema de estadísticas de `PixelPlayer-master/` (app Android del mismo autor).
