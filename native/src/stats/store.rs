@@ -138,20 +138,23 @@ impl Store {
     pub fn rows_in_range(&self, start: Option<i64>, end: i64) -> StoreResult<Vec<EventRow>> {
         let sql = format!(
             "SELECT started_at, ended_at, listened_ms FROM play_events
-             WHERE {RANGE_FILTER} ORDER BY started_at ASC, id ASC"
+             WHERE {RANGE_FILTER}"
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![start, end], |r| {
             Ok(EventRow { started_at: r.get(0)?, ended_at: r.get(1)?, listened_ms: r.get::<_, i64>(2)? as u64 })
         })?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        let mut rows: Vec<EventRow> = rows.collect::<Result<_, _>>()?;
+        // Ordenar en Rust: llegan casi ordenadas por `ended_at` y evita un sort en SQLite.
+        rows.sort_by_key(|r| r.started_at);
+        Ok(rows)
     }
 
     pub fn top_songs(&self, start: Option<i64>, end: i64, limit: u32) -> StoreResult<Vec<TopEntry>> {
         self.run_top(
-            "SELECT MAX(title), MAX(artist), song_path, SUM(listened_ms) AS t, COUNT(*) AS n
+            "SELECT title, artist, song_path, SUM(listened_ms) AS t, COUNT(*) AS n, MAX(ended_at)
              FROM play_events WHERE {FILTER}
-             GROUP BY song_path ORDER BY t DESC, n DESC, MAX(title) ASC LIMIT ?3",
+             GROUP BY song_path ORDER BY t DESC, n DESC, title ASC LIMIT ?3",
             start,
             end,
             limit,
@@ -160,7 +163,7 @@ impl Store {
 
     pub fn top_artists(&self, start: Option<i64>, end: i64, limit: u32) -> StoreResult<Vec<TopEntry>> {
         self.run_top(
-            "SELECT artist, '', MIN(song_path), SUM(listened_ms) AS t, COUNT(*) AS n
+            "SELECT artist, '', song_path, SUM(listened_ms) AS t, COUNT(*) AS n, MAX(ended_at)
              FROM play_events WHERE {FILTER}
              GROUP BY artist ORDER BY t DESC, n DESC, artist ASC LIMIT ?3",
             start,
@@ -171,7 +174,7 @@ impl Store {
 
     pub fn top_albums(&self, start: Option<i64>, end: i64, limit: u32) -> StoreResult<Vec<TopEntry>> {
         self.run_top(
-            "SELECT album, artist, MIN(song_path), SUM(listened_ms) AS t, COUNT(*) AS n
+            "SELECT album, artist, song_path, SUM(listened_ms) AS t, COUNT(*) AS n, MAX(ended_at)
              FROM play_events WHERE {FILTER}
              GROUP BY album, artist ORDER BY t DESC, n DESC, album ASC LIMIT ?3",
             start,

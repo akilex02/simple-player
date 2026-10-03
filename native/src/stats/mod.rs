@@ -3,3 +3,4 @@ pub mod aggregate;
 pub mod model;
 pub mod session;
 pub mod store;
+pub mod summary;
