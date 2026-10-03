@@ -4,10 +4,11 @@ use super::textures::TextureCache;
 use super::visualizers::{self, VisualizerMode};
 use super::widgets::chip::chip;
 use super::widgets::cover::paint_cover;
+use super::widgets::glass::{paint_glass, GlassKind};
 use super::widgets::icon_button::IconButton;
 use super::{progress, transport, volume, Size};
 use crate::state::AppState;
-use crate::theme::{self, icons, text};
+use crate::theme::{self, icons, text, with_alpha};
 use crate::viz::VizFrame;
 use eframe::egui::{self, RichText};
 
@@ -17,6 +18,12 @@ const STRIP_H: f32 = 84.0;
 /// Margen sobre la fila de botones y alto del botón de reproducir (`Size::Large`).
 const TRANSPORT_TOP: f32 = 20.0;
 const TRANSPORT_H: f32 = 64.0;
+/// Alto de la fila de la línea de tiempo y separación con los botones.
+const PROGRESS_H: f32 = 24.0;
+const CONTROLS_GAP: f32 = 10.0;
+/// Margen interno del panel que agrupa los controles principales.
+const PANEL_PAD_X: f32 = 28.0;
+const PANEL_PAD_Y: f32 = 16.0;
 
 /// Pantalla completa "Ahora suena": un overlay que aparece y desaparece con
 /// fundido sobre la app. Portada grande, fondo desenfocado, visualizador como
@@ -152,7 +159,7 @@ impl FullscreenView {
             }
         }
 
-        let center_w = (inner.width() - 460.0).clamp(320.0, 760.0);
+        let center_w = (inner.width() - 460.0).clamp(320.0, 600.0);
         let center = egui::Rect::from_center_size(egui::pos2(inner.center().x, controls.center().y), egui::vec2(center_w, controls.height()));
         // Velo: sube desde transparente hasta oscuro para que los controles se lean sobre las barras.
         let veil = egui::Rect::from_min_max(egui::pos2(rect.left(), controls.top() - 60.0), rect.max);
@@ -168,11 +175,22 @@ impl FullscreenView {
         mesh.indices.extend([0, 1, 2, 0, 2, 3]);
         ui.painter().add(egui::Shape::mesh(mesh));
 
+        // Panel de vidrio (como el encabezado de la biblioteca) que agrupa botones y línea de tiempo.
+        let panel = egui::Rect::from_min_max(
+            egui::pos2(center.left() - PANEL_PAD_X, center.top() + TRANSPORT_TOP - PANEL_PAD_Y),
+            egui::pos2(
+                center.right() + PANEL_PAD_X,
+                center.top() + TRANSPORT_TOP + TRANSPORT_H + CONTROLS_GAP + PROGRESS_H + PANEL_PAD_Y,
+            ),
+        );
+        paint_glass(ui.painter(), panel, GlassKind::Strong, theme::radius::XL, 0.0);
+        ui.painter().rect_filled(panel, theme::radius::XL, with_alpha(accent, 30));
+
         let mut main_controls = ui.new_child(egui::UiBuilder::new().max_rect(center).layout(egui::Layout::top_down(egui::Align::Center)));
         // Mismo orden que la barra inferior: botones arriba, línea de tiempo debajo.
         main_controls.add_space(TRANSPORT_TOP);
         transport::show(&mut main_controls, state, Size::Large);
-        main_controls.add_space(10.0);
+        main_controls.add_space(CONTROLS_GAP);
         progress::show(&mut main_controls, state, Size::Large);
 
         // El volumen se alinea con la fila de botones (su centro vertical).
