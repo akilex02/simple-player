@@ -560,6 +560,43 @@ impl AppState {
         }
     }
 
+    /// El restablecimiento de fábrica toca archivos reales: solo existe en ejecuciones normales.
+    pub fn can_factory_reset(&self) -> bool {
+        self.settings_path.is_some()
+    }
+
+    /// Borra los datos de la app (ver `reset`), detiene la reproducción y vuelve a los valores por defecto
+    /// en memoria. Conserva el historial de estadísticas. Devuelve cuántas cosas se borraron.
+    pub fn factory_reset(&mut self) -> Result<usize, String> {
+        let Some(settings_file) = self.settings_path.clone() else {
+            return Err("No disponible en ejecuciones de desarrollo".to_string());
+        };
+        let window_file = crate::window_state::window_state_path(
+            std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+            std::env::var("HOME").ok().as_deref(),
+        );
+        let (files, dirs) = crate::reset::factory_paths(&settings_file, &window_file);
+        let report = crate::reset::remove_all(&files, &dirs);
+
+        // Cierra la sesión de escucha en curso (si pasó el umbral se registra) antes de vaciar la cola.
+        self.stats.finish();
+        let _ = self.audio.pause();
+        self.is_playing = false;
+        self.current_song_index = None;
+        self.active_queue.clear();
+        self.settings = Settings::default();
+        self.set_volume(0.8);
+        self.is_shuffle = false;
+        self.repeat_mode = RepeatMode::Off;
+        self.set_songs(Vec::new());
+
+        if report.errors.is_empty() {
+            Ok(report.removed)
+        } else {
+            Err(report.errors.join("; "))
+        }
+    }
+
     pub fn rescan_library(&mut self) {
         self.loading = true;
         self.set_songs(scan_and_cache(&self.settings.music_folders));

@@ -10,6 +10,7 @@ mod paths;
 mod perf;
 mod persistence;
 mod repaint;
+mod reset;
 mod shortcuts;
 mod settings;
 mod single_instance;

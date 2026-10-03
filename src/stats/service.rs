@@ -20,7 +20,6 @@ pub enum DataOutcome {
     Failed(String),
 }
 
-#[allow(dead_code)] // Export/Import/Clear los envía la pantalla de Configuración (Tarea 10)
 enum Message {
     Record(PlayEvent),
     RecordBatch(Vec<PlayEvent>),
@@ -98,23 +97,19 @@ impl StatsHandle {
         self.send(Message::RecordBatch(events));
     }
 
-    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 10)
     pub fn export_to(&self, path: PathBuf) {
         self.send(Message::Export(path));
     }
 
-    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 10)
     pub fn import_from(&self, path: PathBuf) {
         self.send(Message::Import(path));
     }
 
-    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 10)
     pub fn clear_history(&self) {
         self.send(Message::Clear);
     }
 
     /// El resultado de la última acción de datos; se entrega una sola vez.
-    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 10)
     pub fn take_data_outcome(&self) -> Option<DataOutcome> {
         self.shared.data_outcome.lock().unwrap_or_else(|e| e.into_inner()).take()
     }

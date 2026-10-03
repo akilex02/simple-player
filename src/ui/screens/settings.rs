@@ -1,6 +1,7 @@
 //! Pantalla de Configuración: carpetas de música, preferencias, datos y acerca de.
 use crate::paths::get_covers_dir;
 use crate::state::AppState;
+use crate::stats::service::DataOutcome;
 use crate::ui::visualizers::VisualizerMode;
 use crate::ui::widgets::chip::chip;
 use crate::ui::widgets::toggle::toggle;
@@ -14,7 +15,6 @@ use std::path::{Path, PathBuf};
 const GAP: f32 = 16.0;
 
 /// Acción destructiva que espera confirmación en su propia fila.
-#[allow(dead_code)] // las usa la sección Datos (Tarea 10)
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Confirm {
     ClearHistory,
@@ -104,6 +104,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
         ui.add_space(GAP);
         appearance_section(ui, state);
         ui.add_space(GAP);
+        data_section(ui, state, &mut view);
+        ui.add_space(GAP);
         about_section(ui);
         ui.add_space(GAP);
     });
@@ -123,8 +125,11 @@ fn section<R>(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egu
 
 /// Fila con etiqueta y descripción a la izquierda y el control a la derecha.
 fn row(ui: &mut egui::Ui, label: &str, description: &str, add_control: impl FnOnce(&mut egui::Ui)) {
+    let total = ui.available_width();
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
+            // El texto se ajusta en varias líneas para no pisar el control de la derecha.
+            ui.set_max_width((total - 200.0).max(160.0));
             ui.label(RichText::new(label).font(theme::bold(text::BASE)));
             ui.label(RichText::new(description).size(text::SM).color(theme::TEXT_MUTED));
         });
@@ -204,6 +209,118 @@ fn appearance_section(ui: &mut egui::Ui, state: &mut AppState) {
         });
         if remember != state.settings.remember_window_size {
             state.update_settings(|s| s.remember_window_size = remember);
+        }
+    });
+}
+
+pub fn outcome_message(outcome: &DataOutcome) -> (String, bool) {
+    match outcome {
+        DataOutcome::Exported(n) => (format!("{n} {} exportado{}", if *n == 1 { "evento" } else { "eventos" }, if *n == 1 { "" } else { "s" }), false),
+        DataOutcome::Imported { imported, duplicates, invalid } => {
+            let mut text = format!(
+                "{imported} {}, {duplicates} {}",
+                if *imported == 1 { "importado" } else { "importados" },
+                if *duplicates == 1 { "repetido" } else { "repetidos" }
+            );
+            if *invalid > 0 {
+                text.push_str(&format!(", {invalid} {}", if *invalid == 1 { "inválido" } else { "inválidos" }));
+            }
+            (text, false)
+        }
+        DataOutcome::Cleared => ("Historial borrado".to_string(), false),
+        DataOutcome::Failed(reason) => (reason.clone(), true),
+    }
+}
+
+pub fn export_file_name(date: chrono::NaiveDate) -> String {
+    format!("simple-player-historial-{}.json", date.format("%Y-%m-%d"))
+}
+
+fn data_section(ui: &mut egui::Ui, state: &mut AppState, view: &mut SettingsUi) {
+    let handle = state.stats.handle().clone();
+    if let Some(outcome) = handle.take_data_outcome() {
+        view.status = Some(outcome_message(&outcome));
+    }
+    let disabled_reason = handle.disabled_reason();
+    section(ui, "DATOS", |ui| {
+        ui.add_enabled_ui(disabled_reason.is_none(), |ui| {
+            row(ui, "Exportar historial", "Guarda todas tus reproducciones en un archivo JSON.", |ui| {
+                if PillButton::new("Exportar…", PillKind::Secondary).icon(icons::DOWNLOAD_SIMPLE).show(ui).clicked() {
+                    let name = export_file_name(chrono::Local::now().date_naive());
+                    if let Some(path) = rfd::FileDialog::new().set_file_name(&name).add_filter("Historial", &["json"]).save_file() {
+                        handle.export_to(path);
+                    }
+                }
+            });
+            ui.add_space(space::SM);
+            row(ui, "Importar historial", "Une un archivo exportado con el que ya tienes; los repetidos se ignoran.", |ui| {
+                if PillButton::new("Importar…", PillKind::Secondary).icon(icons::UPLOAD_SIMPLE).show(ui).clicked() {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("Historial", &["json"]).pick_file() {
+                        handle.import_from(path);
+                    }
+                }
+            });
+            ui.add_space(space::SM);
+            confirm_row(ui, view, Confirm::ClearHistory, "Borrar historial", "Elimina todas las reproducciones registradas.", "Borrar", || {
+                handle.clear_history()
+            });
+        })
+        .response
+        .on_hover_text(disabled_reason.clone().unwrap_or_default());
+        ui.add_space(space::SM);
+
+        let can_reset = state.can_factory_reset();
+        let mut do_reset = false;
+        ui.add_enabled_ui(can_reset, |ui| {
+            confirm_row(
+                ui,
+                view,
+                Confirm::FactoryReset,
+                "Restablecer de fábrica",
+                "Borra ajustes, tamaño de ventana, estado de reproducción y caché. Conserva tu historial y tu música.",
+                "Restablecer",
+                || do_reset = true,
+            );
+        });
+        if do_reset {
+            view.status = Some(match state.factory_reset() {
+                Ok(_) => (
+                    "Ajustes restablecidos. El tamaño de la ventana vuelve al valor por defecto la próxima vez que abras la app.".to_string(),
+                    false,
+                ),
+                Err(e) => (e, true),
+            });
+        }
+        if let Some((text, is_error)) = &view.status {
+            ui.add_space(space::MD);
+            let color = if *is_error { egui::Color32::from_rgb(255, 120, 120) } else { theme::TEXT_MUTED };
+            ui.label(RichText::new(text).size(text::SM).color(color));
+        }
+    });
+}
+
+/// Fila con una acción destructiva: el primer clic pide confirmación en la misma fila.
+fn confirm_row(
+    ui: &mut egui::Ui,
+    view: &mut SettingsUi,
+    which: Confirm,
+    label: &str,
+    description: &str,
+    action_label: &str,
+    on_confirm: impl FnOnce(),
+) {
+    row(ui, label, description, |ui| {
+        if view.confirm == Some(which) {
+            if PillButton::new("Cancelar", PillKind::Ghost).show(ui).clicked() {
+                view.confirm = None;
+            }
+            if PillButton::new(&format!("Sí, {}", action_label.to_lowercase()), PillKind::Primary).icon(icons::WARNING).show(ui).clicked() {
+                view.confirm = None;
+                on_confirm();
+            }
+            ui.label(RichText::new("¿Seguro?").color(theme::ACCENT_SUNSET));
+        } else if PillButton::new(action_label, PillKind::Secondary).icon(icons::TRASH).show(ui).clicked() {
+            view.confirm = Some(which);
         }
     });
 }
@@ -367,5 +484,23 @@ mod tests {
         let d = data_dirs(None, None, Some("/home/u"));
         assert_eq!(d.settings, std::path::PathBuf::from("/home/u/.config/simple-player"));
         assert_eq!(d.stats, std::path::PathBuf::from("/home/u/.local/share/simple-player"));
+    }
+
+    #[test]
+    fn los_resultados_se_explican_y_marcan_los_errores() {
+        use crate::stats::service::DataOutcome;
+        assert_eq!(outcome_message(&DataOutcome::Exported(128)), ("128 eventos exportados".to_string(), false));
+        assert_eq!(outcome_message(&DataOutcome::Exported(1)).0, "1 evento exportado");
+        assert_eq!(outcome_message(&DataOutcome::Imported { imported: 12, duplicates: 3, invalid: 0 }).0, "12 importados, 3 repetidos");
+        assert_eq!(outcome_message(&DataOutcome::Imported { imported: 1, duplicates: 0, invalid: 2 }).0, "1 importado, 0 repetidos, 2 inválidos");
+        assert_eq!(outcome_message(&DataOutcome::Cleared), ("Historial borrado".to_string(), false));
+        let (text, is_error) = outcome_message(&DataOutcome::Failed("sin permisos".into()));
+        assert!(is_error && text.contains("sin permisos"));
+    }
+
+    #[test]
+    fn el_nombre_sugerido_lleva_la_fecha() {
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 3).unwrap();
+        assert_eq!(export_file_name(date), "simple-player-historial-2026-10-03.json");
     }
 }
