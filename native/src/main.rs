@@ -12,6 +12,8 @@ mod repaint;
 mod shortcuts;
 mod single_instance;
 mod state;
+#[allow(dead_code)]
+mod stats;
 mod theme;
 mod ui;
 mod viz;
