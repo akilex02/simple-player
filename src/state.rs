@@ -116,6 +116,8 @@ pub struct AppState {
     pub loading: bool,
     pub settings: Settings,
     settings_path: Option<PathBuf>,
+    /// `true` tras un restablecimiento de fábrica: al cerrar no se guarda el tamaño de la ventana.
+    pub window_reset: bool,
 
     pub active_tab: ActiveTab,
     pub selected_artist: Option<String>,
@@ -164,6 +166,7 @@ impl AppState {
             loading: false,
             settings: Settings::default(),
             settings_path: None,
+            window_reset: false,
             active_tab: ActiveTab::All,
             selected_artist: None,
             selected_album: None,
@@ -578,6 +581,7 @@ impl AppState {
         let (files, dirs) = crate::reset::factory_paths(&settings_file, &window_file);
         let report = crate::reset::remove_all(&files, &dirs);
 
+        self.window_reset = true;
         // Cierra la sesión de escucha en curso (si pasó el umbral se registra) antes de vaciar la cola.
         self.stats.finish();
         let _ = self.audio.pause();

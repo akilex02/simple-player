@@ -77,9 +77,13 @@ pub fn to_json(events: &[PlayEvent], exported_at: i64) -> String {
     serde_json::to_string_pretty(&file).unwrap_or_else(|_| "{}".to_string())
 }
 
+/// Una reproducción no puede durar más de un día; un tope realista evita que unas pocas filas enormes
+/// desborden `SUM(listened_ms)` en SQLite y dejen las estadísticas inutilizables.
+const MAX_LISTENED_MS: u64 = 24 * 60 * 60 * 1000;
+
 fn is_valid(e: &ExportEvent) -> bool {
     e.listened_ms > 0
-        && e.listened_ms <= i64::MAX as u64
+        && e.listened_ms <= MAX_LISTENED_MS
         && e.duration_ms <= i64::MAX as u64
         && e.started_at >= 0
         && e.ended_at >= 0
@@ -183,5 +187,22 @@ mod tests {
     fn los_errores_se_explican_en_espanol() {
         assert!(ImportError::WrongApp.to_string().contains("Simple Player"));
         assert!(ImportError::UnsupportedVersion(9).to_string().contains("versión"));
+    }
+
+    #[test]
+    fn un_tiempo_escuchado_absurdo_se_considera_invalido_para_no_desbordar_las_sumas() {
+        let day = 24 * 60 * 60 * 1000;
+        let json = to_json(
+            &[
+                event(0, day, day as u64, "/limite.mp3"),
+                event(0, day, day as u64 + 1, "/pasa-del-limite.mp3"),
+                event(0, i64::MAX, i64::MAX as u64, "/enorme-1.mp3"),
+                event(0, i64::MAX, i64::MAX as u64, "/enorme-2.mp3"),
+            ],
+            1,
+        );
+        let parsed = parse(&json).unwrap();
+        assert_eq!(parsed.events.len(), 1, "solo el que está en el límite entra");
+        assert_eq!(parsed.invalid, 3);
     }
 }

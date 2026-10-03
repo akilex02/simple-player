@@ -359,7 +359,9 @@ impl eframe::App for App {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if let (Some(path), Some(size)) = (&self.window_state_path, self.window_size) {
-            let _ = window_state::save(path, size);
+            if window_state::save_allowed(self.state.window_reset) {
+                let _ = window_state::save(path, size);
+            }
         }
         self.state.stats.finish();
         self.state.stats.handle().flush(std::time::Duration::from_secs(1));

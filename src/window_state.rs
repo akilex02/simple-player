@@ -41,6 +41,12 @@ pub fn use_saved_size(dev_run: bool, forced: bool, remember: bool) -> bool {
     !dev_run && !forced && remember
 }
 
+/// Tras un restablecimiento de fábrica no se vuelve a escribir `window.json` al cerrar:
+/// el tamaño debe volver al valor por defecto la próxima vez.
+pub fn save_allowed(reset_done: bool) -> bool {
+    !reset_done
+}
+
 pub fn parse(json: &str) -> Option<WindowSize> {
     serde_json::from_str::<WindowSize>(json).ok()?.sanitized()
 }
@@ -150,5 +156,11 @@ mod tests {
         assert!(!use_saved_size(false, false, false), "el usuario lo desactivó");
         assert!(!use_saved_size(true, false, true), "corrida de desarrollo");
         assert!(!use_saved_size(false, true, true), "--window-size manda");
+    }
+
+    #[test]
+    fn tras_un_restablecimiento_no_se_guarda_el_tamano_al_cerrar() {
+        assert!(save_allowed(false));
+        assert!(!save_allowed(true));
     }
 }
