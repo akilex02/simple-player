@@ -1,6 +1,5 @@
 use super::{SpectrumFrame, VizFrame};
 use std::collections::VecDeque;
-use std::time::Instant;
 
 pub const BAR_COUNT: usize = 48;
 const HISTORY_CAP: usize = 64;
@@ -184,6 +183,7 @@ impl VizEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     fn frame(time: f64, bands: Vec<f32>) -> SpectrumFrame {
         SpectrumFrame { time, bands, arrived: Instant::now() }
