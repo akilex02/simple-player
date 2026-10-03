@@ -96,6 +96,7 @@ impl App {
                 "albums" => state.select_tab(ActiveTab::Albums),
                 "artists" => state.select_tab(ActiveTab::Artists),
                 "stats" => state.select_tab(ActiveTab::Stats),
+                "settings" => state.select_tab(ActiveTab::Settings),
                 _ => {}
             }
         }

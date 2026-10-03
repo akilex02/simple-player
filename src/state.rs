@@ -22,6 +22,7 @@ pub enum ActiveTab {
     Albums,
     Artists,
     Stats,
+    Settings,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -553,7 +554,6 @@ impl AppState {
         }
     }
 
-    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 6)
     pub fn remove_music_folder(&mut self, folder: &str) {
         if self.settings.remove_folder(folder) {
             self.save_settings();

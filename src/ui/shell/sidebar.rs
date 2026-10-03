@@ -1,7 +1,6 @@
 use crate::state::{ActiveTab, AppState};
 use crate::theme::{self, icons, space, text};
 use crate::ui::widgets::nav_item::nav_item;
-use crate::ui::widgets::pill_button::{PillButton, PillKind};
 use eframe::egui::{self, RichText};
 
 /// Lado del logo de la app (SVG) junto al nombre.
@@ -32,22 +31,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     ui.add_space(space::XL);
-    section_label(ui, "CARPETA");
-    let summary = match state.settings.music_folders.len() {
-        0 => "Sin carpetas".to_string(),
-        1 => "1 carpeta".to_string(),
-        n => format!("{n} carpetas"),
-    };
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(icons::FOLDER_OPEN).size(text::LG).color(theme::TEXT_MUTED));
-        ui.label(RichText::new(summary).color(theme::TEXT_MAIN));
-    });
-    ui.add_space(space::SM);
-    ui.add_enabled_ui(!state.loading, |ui| {
-        if PillButton::new("Agregar carpeta", PillKind::Secondary).icon(icons::FOLDER_OPEN).show(ui).clicked() {
-            state.add_folder_via_dialog();
-        }
-    });
+    section_label(ui, "APLICACIÓN");
+    if nav_item(ui, icons::GEAR, "Configuración", state.active_tab == ActiveTab::Settings).clicked() {
+        state.select_tab(ActiveTab::Settings);
+    }
 }
 
 fn section_label(ui: &mut egui::Ui, label: &str) {
