@@ -22,7 +22,7 @@ use ui::visualizers::VisualizerMode;
 
 struct App {
     state: AppState,
-    hotkeys: hotkeys::Hotkeys,
+    hotkeys: Option<hotkeys::Hotkeys>,
     tx: mpsc::Sender<AppEvent>,
     rx: mpsc::Receiver<AppEvent>,
     last_spectrum: Vec<f32>,
@@ -47,7 +47,13 @@ impl App {
         }
 
         let mpris_tx = mpris::spawn_mpris_thread(std::sync::Arc::clone(&audio.inner), tx.clone());
-        let hotkeys = hotkeys::Hotkeys::register().expect("No se pudieron registrar los atajos globales");
+        let hotkeys = match hotkeys::Hotkeys::register() {
+            Ok(h) => Some(h),
+            Err(e) => {
+                eprintln!("[aviso] Atajos globales desactivados: {e}");
+                None
+            }
+        };
 
         let mut state = AppState::new(audio, mpris_tx);
         state.init();
@@ -118,7 +124,9 @@ impl App {
         ctx.request_repaint();
         self.textures.begin_frame(ctx, 3);
 
-        self.hotkeys.poll(&self.tx);
+        if let Some(hotkeys) = &self.hotkeys {
+            hotkeys.poll(&self.tx);
+        }
         self.handle_events();
         self.handle_keyboard_shortcuts(ctx);
         let tick_start = Instant::now();
@@ -174,18 +182,33 @@ impl App {
 }
 
 
+const ICON_PNG: &[u8] = include_bytes!("../assets/icons/icon.png");
+
+fn load_icon(png: &[u8]) -> Option<egui::IconData> {
+    let img = image::load_from_memory(png).ok()?.to_rgba8();
+    let (width, height) = img.dimensions();
+    Some(egui::IconData { rgba: img.into_raw(), width, height })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn el_icono_incrustado_se_decodifica() {
+        let icon = load_icon(ICON_PNG).expect("el PNG incrustado debe decodificar");
+        assert!(icon.width > 0 && icon.height > 0);
+        assert_eq!(icon.rgba.len(), (icon.width * icon.height * 4) as usize);
+    }
+
+    #[test]
+    fn bytes_invalidos_no_producen_icono() {
+        assert!(load_icon(b"no es un png").is_none());
+    }
+}
+
 fn main() -> eframe::Result<()> {
-    let icon = image::open("assets/icons/icon.png")
-        .ok()
-        .map(|img| {
-            let img = img.to_rgba8();
-            let (width, height) = img.dimensions();
-            egui::IconData {
-                rgba: img.into_raw(),
-                width,
-                height,
-            }
-        });
+    let icon = load_icon(ICON_PNG);
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1600.0, 1000.0])
