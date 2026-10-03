@@ -1,6 +1,7 @@
 pub mod card;
 pub mod chip;
 pub mod cover;
+pub mod empty_state;
 pub mod glass;
 pub mod gradient;
 pub mod icon_button;

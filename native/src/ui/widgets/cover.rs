@@ -16,9 +16,24 @@ pub fn cover(
     with_shadow: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    paint_cover(ui, rect, textures, cover_path, rounding, fallback_emoji, with_shadow);
+    response
+}
+
+/// Igual que `cover`, pero sobre un rect ya asignado (filas de tabla, héroe).
+pub fn paint_cover(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    textures: &mut TextureCache,
+    cover_path: &Option<String>,
+    rounding: f32,
+    fallback_emoji: &str,
+    with_shadow: bool,
+) {
     if !ui.is_rect_visible(rect) {
-        return response;
+        return;
     }
+    let size = rect.width();
     let painter = ui.painter();
     if with_shadow {
         painter.add(super::glass::shadow(0.4).as_shape(rect, rounding));
@@ -48,7 +63,6 @@ pub fn cover(
             );
         }
     }
-    response
 }
 
 /// Esqueleto de carga: fondo con una banda de luz que lo recorre.

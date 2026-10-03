@@ -272,6 +272,16 @@ impl App {
                 ui::shell::player_bar::show(ui, &mut self.state, &mut self.textures, &self.viz);
             });
 
+        let queue = self.state.show_queue.then(|| {
+            egui::SidePanel::right("queue")
+                .exact_width(332.0)
+                .resizable(false)
+                .frame(egui::Frame::none().fill(theme::GLASS_FILL_STRONG).inner_margin(egui::Margin::symmetric(16.0, 20.0)))
+                .show(ctx, |ui| {
+                    ui::screens::queue_panel::show(ui, &mut self.state, &mut self.textures);
+                })
+        });
+
         egui::CentralPanel::default()
             .frame(egui::Frame::none().inner_margin(egui::Margin::symmetric(28.0, 20.0)))
             .show(ctx, |ui| {
@@ -285,6 +295,10 @@ impl App {
         let (s, b) = (sidebar.response.rect, bar.response.rect);
         lines.vline(s.right() - 0.5, s.y_range(), stroke);
         lines.hline(b.x_range(), b.top() + 0.5, stroke);
+        if let Some(queue) = queue {
+            let q = queue.response.rect;
+            lines.vline(q.left() + 0.5, q.y_range(), stroke);
+        }
     }
 }
 

@@ -1,4 +1,3 @@
-pub mod artists_grid;
 pub mod fullscreen;
 pub mod gallery;
 pub mod lyrics_panel;
@@ -8,7 +7,6 @@ pub mod shell;
 mod size;
 pub mod backdrop;
 pub mod crossfade;
-pub mod song_table;
 pub mod textures;
 pub mod transport;
 pub mod visualizers;

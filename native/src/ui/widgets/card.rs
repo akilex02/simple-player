@@ -17,7 +17,7 @@ pub fn card(ui: &mut egui::Ui, size: egui::Vec2, add_contents: impl FnOnce(&mut 
 
     let inner = lifted.shrink(theme::space::MD);
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Center)));
-    child.set_clip_rect(lifted);
+    child.set_clip_rect(lifted.intersect(ui.clip_rect()));
     add_contents(&mut child);
     response
 }
