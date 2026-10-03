@@ -20,7 +20,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, size: Size) {
             state.handle_prev_song();
         }
         let (play_icon, play_tip) = if state.is_playing { (icons::PAUSE, "Pausar") } else { (icons::PLAY, "Reproducir") };
-        if IconButton::new(play_icon, play_d).primary(true).tooltip(play_tip).show(ui).clicked() {
+        if IconButton::new(play_icon, play_d).primary(true).pulse(state.is_playing).tooltip(play_tip).show(ui).clicked() {
             state.toggle_play_pause();
         }
         if IconButton::new(icons::SKIP_FORWARD, icon_d).tooltip("Siguiente").show(ui).clicked() {

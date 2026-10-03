@@ -9,13 +9,14 @@ pub struct IconButton<'a> {
     size: f32,
     active: bool,
     primary: bool,
+    pulse: bool,
     accent: Option<Color32>,
     tooltip: Option<&'a str>,
 }
 
 impl<'a> IconButton<'a> {
     pub fn new(icon: &'a str, size: f32) -> Self {
-        Self { icon, size, active: false, primary: false, accent: None, tooltip: None }
+        Self { icon, size, active: false, primary: false, pulse: false, accent: None, tooltip: None }
     }
 
     /// Encendido (shuffle activo, letras visibles…): ícono en color de acento.
@@ -27,6 +28,12 @@ impl<'a> IconButton<'a> {
     /// Botón principal (reproducir): relleno de acento y texto oscuro.
     pub fn primary(mut self, primary: bool) -> Self {
         self.primary = primary;
+        self
+    }
+
+    /// El halo late suavemente (reproduciendo).
+    pub fn pulse(mut self, pulse: bool) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -58,7 +65,12 @@ impl<'a> IconButton<'a> {
         let painter = ui.painter();
 
         if self.primary || hover > 0.0 {
-            let (glow, reach) = if self.primary { (0.4 + 0.15 * hover, 1.4 + 0.1 * hover) } else { (0.35 * hover, 1.5) };
+            let beat = if self.pulse { theme::motion::pulse(ui.input(|i| i.time) as f32, 2.4) } else { 0.0 };
+            let (glow, reach) = if self.primary {
+                (0.36 + 0.15 * hover + 0.14 * beat, 1.38 + 0.1 * hover + 0.1 * beat)
+            } else {
+                (0.35 * hover, 1.5)
+            };
             painter.add(radial_glow_mesh(rect.center(), radius * reach, with_alpha(accent, (glow * 140.0) as u8), 28));
         }
 

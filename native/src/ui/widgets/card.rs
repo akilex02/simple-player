@@ -5,7 +5,7 @@ use eframe::egui;
 /// Tarjeta de vidrio clicable que se eleva al pasar el mouse. El contenido se
 /// dibuja dentro de un margen interno de `MD`.
 pub fn card(ui: &mut egui::Ui, size: egui::Vec2, add_contents: impl FnOnce(&mut egui::Ui)) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(size, super::click_without_focus());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     if !ui.is_rect_visible(rect) {
         return response;

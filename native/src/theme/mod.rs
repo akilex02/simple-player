@@ -18,8 +18,11 @@ pub const ACCENT_PURPLE: Color32 = Color32::from_rgb(0x9d, 0x8e, 0xc4);
 pub const ACCENT_SUNSET: Color32 = Color32::from_rgb(0xff, 0xb3, 0x6b);
 
 pub const TEXT_MAIN: Color32 = Color32::from_rgb(0xff, 0xff, 0xff);
-pub const TEXT_MUTED: Color32 = Color32::from_rgb(0xa4, 0xa4, 0xc4);
+pub const TEXT_MUTED: Color32 = Color32::from_rgb(0xb8, 0xb8, 0xd6);
 pub const BORDER_SUBTLE: Color32 = Color32::from_rgb(0x28, 0x28, 0x42);
+
+/// Opacidad (0-255) del velo oscuro sobre la carátula del fondo vivo.
+pub const BACKDROP_SCRIM_ALPHA: u8 = 200;
 
 /// Degradado "atardecer": rosa → naranja → púrpura.
 pub const GRADIENT_SUNSET: [(f32, Color32); 3] = [(0.0, ACCENT_PINK), (0.5, ACCENT_SUNSET), (1.0, ACCENT_PURPLE)];
@@ -63,11 +66,60 @@ pub mod text {
     pub const HERO: f32 = 48.0;
 }
 
-/// Duraciones de animación en segundos.
+/// Duraciones de animación en segundos y curvas.
 pub mod motion {
     pub const HOVER: f32 = 0.12;
     pub const SCREEN: f32 = 0.25;
     pub const BACKDROP: f32 = 0.4;
+
+    /// Progreso 0..1 de un fundido de entrada tras `elapsed` segundos, con curva ease-out.
+    pub fn fade_in(elapsed: f32, duration: f32) -> f32 {
+        if duration <= 0.0 {
+            return 1.0;
+        }
+        let t = (elapsed / duration).clamp(0.0, 1.0);
+        1.0 - (1.0 - t).powi(3)
+    }
+
+    /// Latido suave 0..1 que sube y baja una vez por `period` segundos.
+    pub fn pulse(t: f32, period: f32) -> f32 {
+        0.5 - 0.5 * (std::f32::consts::TAU * t / period).cos()
+    }
+}
+
+#[cfg(test)]
+mod motion_tests {
+    use super::motion::*;
+
+    #[test]
+    fn el_fundido_va_de_0_a_1_y_se_queda() {
+        assert_eq!(fade_in(0.0, 0.25), 0.0);
+        assert_eq!(fade_in(0.25, 0.25), 1.0);
+        assert_eq!(fade_in(5.0, 0.25), 1.0);
+    }
+
+    #[test]
+    fn el_fundido_es_ease_out_y_monotono() {
+        let mid = fade_in(0.125, 0.25);
+        assert!(mid > 0.5 && mid < 1.0, "ease-out debe adelantarse a lo lineal: {mid}");
+        let samples: Vec<f32> = (0..=10).map(|i| fade_in(i as f32 * 0.025, 0.25)).collect();
+        assert!(samples.windows(2).all(|w| w[0] <= w[1]), "{samples:?}");
+    }
+
+    #[test]
+    fn una_duracion_nula_no_produce_nan() {
+        assert_eq!(fade_in(0.0, 0.0), 1.0);
+    }
+
+    #[test]
+    fn el_pulso_oscila_entre_0_y_1_con_el_periodo_dado() {
+        assert!(pulse(0.0, 2.0).abs() < 1e-4);
+        assert!((pulse(1.0, 2.0) - 1.0).abs() < 1e-4);
+        assert!((pulse(0.37, 2.0) - pulse(2.37, 2.0)).abs() < 1e-4);
+        for i in 0..40 {
+            assert!((0.0..=1.0).contains(&pulse(i as f32 * 0.13, 2.0)));
+        }
+    }
 }
 
 // ── Fuentes ───────────────────────────────────────────────────────────────

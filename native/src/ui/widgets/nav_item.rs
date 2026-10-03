@@ -18,6 +18,9 @@ pub fn nav_item(ui: &mut egui::Ui, icon: &str, label: &str, active: bool) -> egu
         painter.rect_filled(rect, rounding, egui::Color32::from_white_alpha((20.0 * hover) as u8));
     }
 
+    if response.has_focus() {
+        super::paint_focus_ring(painter, rect, rounding, accent);
+    }
     let color = if active { accent } else { theme::lerp_color(theme::TEXT_MUTED, theme::TEXT_MAIN, hover) };
     painter.text(
         egui::pos2(rect.left() + 20.0, rect.center().y),

@@ -21,6 +21,9 @@ pub fn chip(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
     painter.rect_filled(rect, rounding, fill);
     let stroke = if selected { accent } else { theme::lerp_color(theme::GLASS_BORDER, theme::TEXT_MUTED, hover) };
     painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, stroke));
+    if response.has_focus() {
+        super::paint_focus_ring(painter, rect, rounding, accent);
+    }
     painter.galley(egui::pos2(rect.center().x - galley.size().x / 2.0, rect.center().y - galley.size().y / 2.0), galley, color);
     response
 }

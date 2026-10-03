@@ -52,6 +52,38 @@ pub fn approach_color(current: Color32, target: Color32, dt: f32, tau: f32) -> C
     Color32::from_rgb(mix(current.r(), target.r()), mix(current.g(), target.g()), mix(current.b(), target.b()))
 }
 
+/// Como `approach_color` pero en canales flotantes (sin redondear en cada paso,
+/// que deja el color atascado a ~10 unidades del destino) y con ajuste exacto
+/// al llegar, para que el llamador pueda dejar de animar.
+pub fn approach_rgb(current: [f32; 3], target: [f32; 3], dt: f32, tau: f32) -> [f32; 3] {
+    let k = 1.0 - (-dt / tau).exp();
+    let next: [f32; 3] = std::array::from_fn(|i| current[i] + (target[i] - current[i]) * k);
+    if (0..3).all(|i| (next[i] - target[i]).abs() < 0.5) { target } else { next }
+}
+
+/// Luminancia relativa WCAG de un color opaco.
+pub fn relative_luminance(c: Color32) -> f32 {
+    let linear = |v: u8| {
+        let v = v as f32 / 255.0;
+        if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    };
+    0.2126 * linear(c.r()) + 0.7152 * linear(c.g()) + 0.0722 * linear(c.b())
+}
+
+/// Razón de contraste WCAG (1.0 a 21.0) entre dos colores opacos.
+pub fn contrast_ratio(a: Color32, b: Color32) -> f32 {
+    let (la, lb) = (relative_luminance(a), relative_luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+/// `fg` (con su alfa) compuesto sobre un `bg` opaco.
+pub fn over(fg: Color32, bg: Color32) -> Color32 {
+    let [r, g, b, a] = fg.to_srgba_unmultiplied();
+    let k = a as f32 / 255.0;
+    let mix = |f: u8, back: u8| (f as f32 * k + back as f32 * (1.0 - k)).round() as u8;
+    Color32::from_rgb(mix(r, bg.r()), mix(g, bg.g()), mix(b, bg.b()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,5 +145,56 @@ mod tests {
         let (a, b) = (Color32::from_rgb(0, 0, 0), Color32::from_rgb(200, 200, 200));
         let mid = approach_color(a, b, 0.2, 0.2);
         assert!(mid.r() > 60 && mid.r() < 140, "{mid:?}");
+    }
+
+    // ── Contraste (WCAG AA) ────────────────────────────────────────────────
+    #[test]
+    fn negro_sobre_blanco_es_21_a_1_y_un_color_consigo_mismo_1_a_1() {
+        assert!((contrast_ratio(Color32::BLACK, Color32::WHITE) - 21.0).abs() < 0.05);
+        assert!((contrast_ratio(Color32::GRAY, Color32::GRAY) - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn mezclar_un_velo_sobre_un_fondo_interpola_por_el_alfa() {
+        let mixed = over(Color32::from_rgba_unmultiplied(0, 0, 0, 128), Color32::WHITE);
+        assert!((126..=129).contains(&mixed.r()), "{mixed:?}");
+    }
+
+    /// Fondo más claro posible: una carátula blanca bajo el velo del fondo vivo.
+    fn worst_case_backdrop() -> Color32 {
+        over(crate::theme::with_alpha(crate::theme::BG_BASE, crate::theme::BACKDROP_SCRIM_ALPHA), Color32::WHITE)
+    }
+
+    #[test]
+    fn el_texto_principal_cumple_aaa_sobre_el_peor_fondo() {
+        let ratio = contrast_ratio(crate::theme::TEXT_MAIN, worst_case_backdrop());
+        assert!(ratio >= 7.0, "{ratio}");
+    }
+
+    #[test]
+    fn el_texto_atenuado_cumple_aa_sobre_el_peor_fondo() {
+        let ratio = contrast_ratio(crate::theme::TEXT_MUTED, worst_case_backdrop());
+        assert!(ratio >= 4.5, "{ratio}");
+    }
+
+    #[test]
+    fn el_acento_llega_exactamente_a_su_destino_a_60_fps_y_deja_de_animar() {
+        let mut c = [255.0, 158.0, 189.0];
+        let target = [30.0, 60.0, 200.0];
+        let mut frames = 0;
+        while c != target && frames < 600 {
+            c = approach_rgb(c, target, 1.0 / 60.0, 0.35);
+            frames += 1;
+        }
+        assert_eq!(c, target, "tras {frames} frames");
+        assert!(frames < 300, "tarda demasiado: {frames}");
+    }
+
+    #[test]
+    fn approach_rgb_no_se_mueve_sin_tiempo_y_avanza_con_tiempo() {
+        let (a, b) = ([0.0; 3], [100.0; 3]);
+        assert_eq!(approach_rgb(a, b, 0.0, 0.35), a);
+        let step = approach_rgb(a, b, 0.016, 0.35);
+        assert!(step[0] > 0.0 && step[0] < 100.0);
     }
 }

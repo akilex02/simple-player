@@ -42,11 +42,25 @@ impl<'a> PillSlider<'a> {
                 response.mark_changed();
             }
         }
+        if response.has_focus() {
+            // Que las flechas izquierda/derecha muevan el slider en vez del foco.
+            ui.memory_mut(|m| {
+                m.set_focus_lock_filter(response_id, egui::EventFilter { horizontal_arrows: true, ..Default::default() })
+            });
+            let (left, right, shift) = ui.input(|i| {
+                (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight), i.modifiers.shift)
+            });
+            let adjusted = crate::shortcuts::adjust_with_keys(*self.value, left, right, shift);
+            if adjusted != *self.value {
+                *self.value = adjusted;
+                response.mark_changed();
+            }
+        }
         if !ui.is_rect_visible(rect) {
             return response;
         }
 
-        let active = response.hovered() || response.dragged();
+        let active = response.hovered() || response.dragged() || response.has_focus();
         let hot = ui.ctx().animate_bool_with_time(response_id, active, theme::motion::HOVER);
         let painter = ui.painter();
         let height = 4.0 + 2.0 * hot;
@@ -65,6 +79,9 @@ impl<'a> PillSlider<'a> {
             painter.circle_filled(egui::pos2(track.left() + height / 2.0, track.center().y), height / 2.0, theme::ACCENT_PINK);
         }
 
+        if response.has_focus() {
+            super::paint_focus_ring(painter, rect.shrink2(egui::vec2(0.0, 3.0)), 8.0, theme::accent(ui.ctx()));
+        }
         let thumb_x = track_left + fill_w;
         let r = THUMB_R * hot;
         if r > 0.5 {

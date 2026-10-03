@@ -63,7 +63,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
     egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, ROW_H, indices.len(), |ui, range| {
         for i in range {
             let song = &state.songs[indices[i]];
-            let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), egui::Sense::click());
+            let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), crate::ui::widgets::click_without_focus());
             let is_current = current_path.as_deref() == Some(song.path.as_str());
             paint_row(ui, rect, &response, song, i + 1, is_current && playing, is_current, &cols, accent, time, textures);
             if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -123,6 +123,9 @@ fn sort_cell(ui: &mut egui::Ui, state: &mut AppState, rect: egui::Rect, label: &
     let active = state.sort_field == field && state.search_query.trim().is_empty();
     let id = ui.id().with(("sort_cell", label));
     let response = ui.interact(rect, id, egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    if response.has_focus() {
+        crate::ui::widgets::paint_focus_ring(ui.painter(), rect.shrink2(egui::vec2(-2.0, 4.0)), 4.0, theme::accent(ui.ctx()));
+    }
     let color = if active { theme::accent(ui.ctx()) } else if response.hovered() { theme::TEXT_MAIN } else { theme::TEXT_MUTED };
     let caret = match (active, state.sort_direction) {
         (true, SortDirection::Asc) => format!(" {}", icons::CARET_UP),
@@ -153,8 +156,11 @@ fn paint_row(
     let painter = ui.painter();
     if is_current {
         painter.rect_filled(rect, radius::SM, with_alpha(accent, 44));
-    } else if response.hovered() {
-        painter.rect_filled(rect, radius::SM, Color32::from_white_alpha(16));
+    } else {
+        let hover = ui.ctx().animate_bool_with_time(response.id, response.hovered(), theme::motion::HOVER);
+        if hover > 0.0 {
+            painter.rect_filled(rect, radius::SM, Color32::from_white_alpha((16.0 * hover) as u8));
+        }
     }
 
     let cy = rect.center().y;

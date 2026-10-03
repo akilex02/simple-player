@@ -29,11 +29,13 @@ pub fn cover_uv(tex_size: egui::Vec2, target: egui::Vec2) -> egui::Rect {
 pub struct Backdrop {
     fade: Crossfade<String>,
     accent: Color32,
+    accent_rgb: [f32; 3],
 }
 
 impl Backdrop {
     pub fn new() -> Self {
-        Self { fade: Crossfade::new(theme::motion::BACKDROP), accent: theme::ACCENT_PINK }
+        let a = theme::ACCENT_PINK;
+        Self { fade: Crossfade::new(theme::motion::BACKDROP), accent: a, accent_rgb: [a.r() as f32, a.g() as f32, a.b() as f32] }
     }
 
     /// Acento actual: rosa mezclado con el color dominante de la carátula.
@@ -61,8 +63,10 @@ impl Backdrop {
             Some(d) => theme::lerp_color(theme::ACCENT_PINK, color::ensure_vibrant(d), 0.65),
             None => theme::ACCENT_PINK,
         };
-        self.accent = color::approach_color(self.accent, target_accent, dt, 0.35);
-        if self.fade.is_animating() || self.accent != target_accent {
+        let target_rgb = [target_accent.r() as f32, target_accent.g() as f32, target_accent.b() as f32];
+        self.accent_rgb = color::approach_rgb(self.accent_rgb, target_rgb, dt, 0.35);
+        self.accent = Color32::from_rgb(self.accent_rgb[0].round() as u8, self.accent_rgb[1].round() as u8, self.accent_rgb[2].round() as u8);
+        if self.fade.is_animating() || self.accent_rgb != target_rgb {
             ctx.request_repaint();
         }
     }
@@ -81,7 +85,7 @@ impl Backdrop {
             let uv = cover_uv(tex.size_vec2(), rect.size());
             painter.image(tex.id(), rect, uv, Color32::from_white_alpha((alpha.clamp(0.0, 1.0) * 255.0) as u8));
         }
-        painter.rect_filled(rect, 0.0, with_alpha(theme::BG_BASE, 150));
+        painter.rect_filled(rect, 0.0, with_alpha(theme::BG_BASE, theme::BACKDROP_SCRIM_ALPHA));
     }
 
     /// Actualiza y pinta en la capa de fondo de la ventana.

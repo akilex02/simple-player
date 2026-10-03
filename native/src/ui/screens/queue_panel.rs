@@ -53,7 +53,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
         for i in range {
             let queue_index = current + 1 + i;
             let song = &state.active_queue[queue_index];
-            let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), egui::Sense::click());
+            let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), crate::ui::widgets::click_without_focus());
             if response.hovered() {
                 ui.painter().rect_filled(rect, radius::SM, egui::Color32::from_white_alpha(16));
             }

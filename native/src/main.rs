@@ -9,6 +9,8 @@ mod paths;
 mod perf;
 mod persistence;
 mod repaint;
+mod shortcuts;
+mod single_instance;
 mod state;
 mod theme;
 mod ui;
@@ -40,6 +42,7 @@ struct App {
     gallery: Option<ui::gallery::Gallery>,
     backdrop: ui::backdrop::Backdrop,
     shot: Option<(String, u32)>,
+    bench: Option<Bench>,
 }
 
 impl App {
@@ -92,6 +95,15 @@ impl App {
         if let Some(secs) = ui::gallery::arg_value("--time").and_then(|v| v.parse().ok()) {
             state.current_time = secs;
         }
+        if std::env::args().any(|a| a == "--play") {
+            // Solo desarrollo: reproduce en silencio sin pasar por `play_index`,
+            // que persistiría la cola y pisaría los ajustes guardados del usuario.
+            if let Some(path) = state.current_song().map(|s| s.path.clone()) {
+                let _ = state.audio.set_volume(0.0);
+                let _ = state.audio.play(&path);
+                state.is_playing = true;
+            }
+        }
         state.is_fullscreen = std::env::args().any(|a| a == "--fullscreen");
         let mut fullscreen_view = ui::fullscreen::FullscreenView::default();
         if let Some(mode) = ui::gallery::arg_value("--viz") {
@@ -122,6 +134,7 @@ impl App {
             gallery,
             backdrop: ui::backdrop::Backdrop::new(),
             shot: ui::gallery::arg_value("--shot").map(|path| (path, 0)),
+            bench: ui::gallery::arg_value("--bench").and_then(|v| v.parse().ok()).map(Bench::new),
         }
     }
 
@@ -170,6 +183,18 @@ impl App {
 
     /// Flag de desarrollo `--shot <ruta>`: la app guarda su propia captura a
     /// los ~2 s y se cierra, para revisar el aspecto sin depender del escritorio.
+    fn handle_dev_bench(&mut self, ctx: &egui::Context) {
+        let Some(bench) = &mut self.bench else { return };
+        // Sondeo lento: no debe alterar lo que se mide.
+        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        // (el conteo de frames solo incluye los que ya se dibujan por otras razones)
+        if let Some(report) = bench.poll() {
+            println!("{report}");
+            self.bench = None;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
     fn handle_dev_screenshot(&mut self, ctx: &egui::Context) {
         let Some((path, frames)) = &mut self.shot else { return };
         ctx.request_repaint();
@@ -203,7 +228,24 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!window_fullscreen));
         }
 
+        let widget_focused = ctx.memory(|m| m.focused().is_some());
+        let (duration, now_secs) = (self.state.current_song().map(|s| s.duration_secs as f64).unwrap_or(0.0), self.state.current_time);
+        let mut seek_by: Option<f64> = None;
+        let mut volume_by: Option<f64> = None;
         ctx.input(|i| {
+            let plain = !i.modifiers.alt && !i.modifiers.command && !i.modifiers.shift;
+            if plain && !editing_text && !widget_focused {
+                if i.key_pressed(egui::Key::ArrowLeft) { seek_by = Some(-shortcuts::SEEK_STEP_SECS); }
+                if i.key_pressed(egui::Key::ArrowRight) { seek_by = Some(shortcuts::SEEK_STEP_SECS); }
+                if i.key_pressed(egui::Key::ArrowUp) { volume_by = Some(shortcuts::VOLUME_STEP); }
+                if i.key_pressed(egui::Key::ArrowDown) { volume_by = Some(-shortcuts::VOLUME_STEP); }
+                if i.key_pressed(egui::Key::M) { self.state.toggle_mute(); }
+                if i.key_pressed(egui::Key::Q) { self.state.show_queue = !self.state.show_queue; }
+                if i.key_pressed(egui::Key::F) { self.state.is_fullscreen = !self.state.is_fullscreen; }
+                if i.key_pressed(egui::Key::L) {
+                    if self.state.is_fullscreen { self.state.toggle_lyrics_visibility(); } else { self.state.open_lyrics(); }
+                }
+            }
             if i.key_pressed(egui::Key::Space) && !editing_text {
                 self.state.toggle_play_pause();
             }
@@ -229,12 +271,19 @@ impl App {
                 self.viz_latency_secs += 0.010;
             }
         });
+        if let Some(delta) = seek_by {
+            self.state.seek_commit(shortcuts::seek_target(now_secs, delta, duration));
+        }
+        if let Some(delta) = volume_by {
+            self.state.set_volume(shortcuts::step_volume(self.state.volume, delta));
+        }
     }
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_dev_screenshot(ctx);
+        self.handle_dev_bench(ctx);
         self.perf.begin_frame(Instant::now());
         self.draw(ctx);
         let (tex_count, tex_bytes) = self.textures.stats();
@@ -323,6 +372,56 @@ impl App {
     }
 }
 
+/// Mide el CPU del proceso entre `WARMUP` y `WARMUP + secs` (solo desarrollo).
+struct Bench {
+    secs: f64,
+    started: Instant,
+    from: Option<u64>,
+    frames: u64,
+    frames_from: u64,
+}
+
+impl Bench {
+    const WARMUP: f64 = 4.0;
+    /// Ticks de CPU por segundo en Linux (`getconf CLK_TCK`).
+    const CLK_TCK: f64 = 100.0;
+
+    fn new(secs: f64) -> Self {
+        Self { secs, started: Instant::now(), from: None, frames: 0, frames_from: 0 }
+    }
+
+    fn cpu_ticks() -> u64 {
+        let stat = std::fs::read_to_string("/proc/self/stat").unwrap_or_default();
+        let after_comm = stat.rsplit_once(')').map(|(_, rest)| rest).unwrap_or("");
+        let fields: Vec<&str> = after_comm.split_whitespace().collect();
+        let tick = |i: usize| fields.get(i).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        tick(11) + tick(12)
+    }
+
+    fn poll(&mut self) -> Option<String> {
+        self.frames += 1;
+        let elapsed = self.started.elapsed().as_secs_f64();
+        match self.from {
+            None if elapsed >= Self::WARMUP => {
+                self.from = Some(Self::cpu_ticks());
+                self.frames_from = self.frames;
+                None
+            }
+            Some(from) if elapsed >= Self::WARMUP + self.secs => {
+                let used = (Self::cpu_ticks() - from) as f64 / Self::CLK_TCK;
+                let frames = (self.frames - self.frames_from).max(1) as f64;
+                Some(format!(
+                    "[bench] CPU {:.1} % | {:.0} fps | {:.2} ms de CPU por frame",
+                    used / self.secs * 100.0,
+                    frames / self.secs,
+                    used / frames * 1000.0
+                ))
+            }
+            _ => None,
+        }
+    }
+}
+
 const ICON_PNG: &[u8] = include_bytes!("../assets/icons/icon.png");
 
 fn load_icon(png: &[u8]) -> Option<egui::IconData> {
@@ -349,6 +448,24 @@ mod tests {
 }
 
 fn main() -> eframe::Result<()> {
+    // Las capturas y la galería de desarrollo conviven con una instancia abierta.
+    let dev_run = ["--shot", "--gallery", "--allow-multiple"].iter().any(|f| std::env::args().any(|a| a == *f));
+    let _instance_lock = if dev_run {
+        None
+    } else {
+        match single_instance::acquire(&single_instance::default_path()) {
+            Ok(single_instance::Acquire::Acquired(lock)) => Some(lock),
+            Ok(single_instance::Acquire::AlreadyRunning) => {
+                eprintln!("Simple Player ya está abierto.");
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("[aviso] No se pudo comprobar la instancia única: {e}");
+                None
+            }
+        }
+    };
+
     let icon = load_icon(ICON_PNG);
 
     let mut viewport = egui::ViewportBuilder::default()

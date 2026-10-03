@@ -38,7 +38,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, size: Size) {
         if response.changed() {
             state.current_time = (fraction * total) as f64;
         }
-        if response.drag_stopped() || (response.clicked() && !response.dragged()) {
+        let keyboard_change = response.changed() && response.has_focus() && !response.is_pointer_button_down_on();
+        if response.drag_stopped() || (response.clicked() && !response.dragged()) || keyboard_change {
             state.seek_commit((fraction * total) as f64);
         }
 
