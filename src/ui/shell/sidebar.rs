@@ -33,18 +33,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
 
     ui.add_space(space::XL);
     section_label(ui, "CARPETA");
-    if let Some(path) = &state.current_folder_path {
-        let name = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(icons::FOLDER_OPEN).size(text::LG).color(theme::TEXT_MUTED));
-            ui.add(egui::Label::new(RichText::new(name).color(theme::TEXT_MAIN)).truncate()).on_hover_text(path);
-        });
-        ui.add_space(space::SM);
-    }
-    let label = if state.current_folder_path.is_some() { "Cambiar carpeta" } else { "Abrir carpeta" };
+    let summary = match state.settings.music_folders.len() {
+        0 => "Sin carpetas".to_string(),
+        1 => "1 carpeta".to_string(),
+        n => format!("{n} carpetas"),
+    };
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(icons::FOLDER_OPEN).size(text::LG).color(theme::TEXT_MUTED));
+        ui.label(RichText::new(summary).color(theme::TEXT_MAIN));
+    });
+    ui.add_space(space::SM);
     ui.add_enabled_ui(!state.loading, |ui| {
-        if PillButton::new(label, PillKind::Secondary).icon(icons::FOLDER_OPEN).show(ui).clicked() {
-            state.select_folder_and_scan();
+        if PillButton::new("Agregar carpeta", PillKind::Secondary).icon(icons::FOLDER_OPEN).show(ui).clicked() {
+            state.add_folder_via_dialog();
         }
     });
 }

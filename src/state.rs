@@ -1,15 +1,17 @@
 use crate::audio::clock::SeekGuard;
 use crate::audio::AudioPlayer;
-use crate::library::{scan_music_folder, select_folder, Song};
+use crate::library::{load_cached_library, scan_and_cache, select_folder, Song};
 use crate::library_view::{self, AlbumGroup, LibraryView};
 use crate::lyrics::{self, Lyrics};
 use crate::mpris::MprisMsg;
 use crate::persistence::{load_playback_state, save_playback_state, PlaybackState};
+use crate::settings::{self, Settings};
 use crate::stats::model::{SongSnapshot, StatsRange};
 use crate::stats::recorder::StatsRecorder;
 use crate::stats::service::StatsHandle;
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::time::Instant;
@@ -111,7 +113,8 @@ pub struct AppState {
     pub current_time: f64,
     pub is_dragging_seek: bool,
     pub loading: bool,
-    pub current_folder_path: Option<String>,
+    pub settings: Settings,
+    settings_path: Option<PathBuf>,
 
     pub active_tab: ActiveTab,
     pub selected_artist: Option<String>,
@@ -158,7 +161,8 @@ impl AppState {
             current_time: 0.0,
             is_dragging_seek: false,
             loading: false,
-            current_folder_path: None,
+            settings: Settings::default(),
+            settings_path: None,
             active_tab: ActiveTab::All,
             selected_artist: None,
             selected_album: None,
@@ -184,14 +188,11 @@ impl AppState {
     /// equivalente al `useEffect` de inicio en App.tsx.
     pub fn init(&mut self) {
         self.loading = true;
-        self.set_songs(scan_music_folder(None));
+        self.set_songs(load_cached_library().unwrap_or_else(|| scan_and_cache(&self.settings.music_folders)));
         self.loading = false;
 
         let Some(saved) = load_playback_state() else { return };
 
-        if saved.folder_path.is_some() {
-            self.current_folder_path = saved.folder_path;
-        }
         self.is_shuffle = saved.is_shuffle;
         self.repeat_mode = RepeatMode::from_str(&saved.repeat_mode);
 
@@ -220,7 +221,7 @@ impl AppState {
 
     fn persist(&self) {
         let state = PlaybackState {
-            folder_path: self.current_folder_path.clone(),
+            folder_path: None,
             queue_paths: self.active_queue.iter().map(|s| s.path.clone()).collect(),
             current_index: self.current_song_index,
             volume: self.volume,
@@ -517,16 +518,52 @@ impl AppState {
         self.selected_album = None;
     }
 
-    pub fn select_folder_and_scan(&mut self) {
-        if let Some(folder) = select_folder() {
-            self.current_folder_path = Some(folder.clone());
-            self.scan_folder(Some(folder));
+    /// Ajustes cargados al arrancar y dónde guardarlos (`None` en corridas de desarrollo: no se escribe nada).
+    pub fn with_settings(mut self, settings: Settings, path: Option<PathBuf>) -> Self {
+        self.settings = settings;
+        self.settings_path = path;
+        self
+    }
+
+    fn save_settings(&self) {
+        if let Some(path) = &self.settings_path {
+            if let Err(e) = settings::save(path, &self.settings) {
+                eprintln!("[aviso] No se pudieron guardar los ajustes: {e}");
+            }
         }
     }
 
-    pub fn scan_folder(&mut self, folder: Option<String>) {
+    /// Aplica un cambio a los ajustes y lo guarda.
+    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 7)
+    pub fn update_settings(&mut self, change: impl FnOnce(&mut Settings)) {
+        change(&mut self.settings);
+        self.save_settings();
+    }
+
+    pub fn add_folder_via_dialog(&mut self) {
+        if let Some(folder) = select_folder() {
+            self.add_music_folder(&folder);
+        }
+    }
+
+    pub fn add_music_folder(&mut self, folder: &str) {
+        if self.settings.add_folder(folder) {
+            self.save_settings();
+            self.rescan_library();
+        }
+    }
+
+    #[allow(dead_code)] // lo usa la pantalla de Configuración (Tarea 6)
+    pub fn remove_music_folder(&mut self, folder: &str) {
+        if self.settings.remove_folder(folder) {
+            self.save_settings();
+            self.rescan_library();
+        }
+    }
+
+    pub fn rescan_library(&mut self) {
         self.loading = true;
-        self.set_songs(scan_music_folder(folder));
+        self.set_songs(scan_and_cache(&self.settings.music_folders));
         self.loading = false;
     }
 

@@ -53,7 +53,12 @@ struct App {
 }
 
 impl App {
-    fn new(cc: &eframe::CreationContext<'_>, window_state_path: Option<std::path::PathBuf>) -> Self {
+    fn new(
+        cc: &eframe::CreationContext<'_>,
+        window_state_path: Option<std::path::PathBuf>,
+        settings: settings::Settings,
+        settings_path: Option<std::path::PathBuf>,
+    ) -> Self {
         theme::install(&cc.egui_ctx);
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
@@ -84,7 +89,7 @@ impl App {
             }
         };
 
-        let mut state = AppState::new(audio, mpris_tx);
+        let mut state = AppState::new(audio, mpris_tx).with_settings(settings, settings_path);
         state.init();
         if let Some(tab) = ui::gallery::arg_value("--tab") {
             match tab.as_str() {
@@ -528,9 +533,19 @@ fn main() -> eframe::Result<()> {
 
     let icon = load_icon(ICON_PNG);
 
+    // Ajustes: las corridas de desarrollo usan unos en memoria (con `--music-folder`) y nunca tocan el archivo real.
+    let args: Vec<String> = std::env::args().collect();
+    let dev_window = ["--shot", "--bench", "--gallery"].iter().any(|f| args.iter().any(|a| a == *f));
+    let real_settings_path = settings::settings_path(std::env::var("XDG_CONFIG_HOME").ok().as_deref(), std::env::var("HOME").ok().as_deref());
+    let (settings, settings_path) = if dev_window {
+        (settings::Settings { music_folders: settings::dev_folders_from_args(&args), ..settings::Settings::default() }.sanitized(), None)
+    } else {
+        let playback_folder = persistence::load_playback_state().and_then(|s| s.folder_path);
+        (settings::load_or_migrate(&real_settings_path, playback_folder.as_deref()), Some(real_settings_path))
+    };
+
     // Tamaño de la ventana: `--window-size AxB` (pruebas) > el guardado > el predeterminado.
     // Las corridas de desarrollo no leen ni escriben el archivo del usuario.
-    let dev_window = ["--shot", "--bench", "--gallery"].iter().any(|f| std::env::args().any(|a| a == *f));
     let saved_path = window_state::window_state_path(
         std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
         std::env::var("HOME").ok().as_deref(),
@@ -557,6 +572,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Simple Player",
         options,
-        Box::new(move |cc| Ok(Box::new(App::new(cc, window_state_path)))),
+        Box::new(move |cc| Ok(Box::new(App::new(cc, window_state_path, settings, settings_path)))),
     )
 }

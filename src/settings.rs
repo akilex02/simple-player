@@ -1,4 +1,3 @@
-#![allow(dead_code)] // se quita al conectar (Tarea 4)
 //! Ajustes del usuario (`settings.json`). Lógica pura salvo `load`/`save`.
 use crate::ui::visualizers::VisualizerMode;
 use serde::{Deserialize, Serialize};
@@ -63,6 +62,7 @@ impl Settings {
         self.music_folders.len() != before
     }
 
+    #[allow(dead_code)] // lo usa el arranque (Tarea 5)
     pub fn visualizer_mode(&self) -> VisualizerMode {
         VisualizerMode::from_name(&self.default_visualizer).unwrap_or(VisualizerMode::Bars)
     }

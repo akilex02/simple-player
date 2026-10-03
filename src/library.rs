@@ -24,63 +24,6 @@ pub fn select_folder() -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
-pub fn scan_music_folder(folder_path: Option<String>) -> Vec<Song> {
-    let cache_file = get_library_cache_path();
-
-    // Fast startup: serve from disk cache on first run
-    if folder_path.is_none() && cache_file.exists() {
-        if let Ok(content) = fs::read_to_string(&cache_file) {
-            if let Ok(mut songs) = serde_json::from_str::<Vec<Song>>(&content) {
-                if !songs.is_empty() {
-                    let covers_dir = get_covers_dir();
-                    for song in &mut songs {
-                        if let Some(ref mut c) = song.cover_art {
-                            if c.starts_with("cover://") {
-                                // Migrate old cover:// URIs to absolute paths
-                                let filename = c.trim_start_matches("cover://");
-                                *c = covers_dir.join(filename).to_string_lossy().to_string();
-                            }
-                        }
-                    }
-                    return songs;
-                }
-            }
-        }
-    }
-
-    let target_dir = folder_path
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| {
-            std::env::var("HOME")
-                .map(|h| format!("{}/Música", h))
-                .unwrap_or_else(|_| "/home".to_string())
-        });
-
-    let supported_ext = ["mp3", "flac", "ogg", "wav", "m4a", "aac", "opus", "wma"];
-    let covers_dir = get_covers_dir();
-
-    let songs: Vec<Song> = WalkDir::new(&target_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().is_file()
-                && e.path()
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .map(|ext| supported_ext.contains(&ext.to_lowercase().as_str()))
-                    .unwrap_or(false)
-        })
-        .map(|e| extract_song_info(e.path(), &covers_dir))
-        .collect();
-
-    // Persist lean JSON (paths only, no base64) for instant future startups
-    if let Ok(json) = serde_json::to_string(&songs) {
-        let _ = fs::write(&cache_file, json);
-    }
-
-    songs
-}
-
 const SUPPORTED_EXT: [&str; 8] = ["mp3", "flac", "ogg", "wav", "m4a", "aac", "opus", "wma"];
 
 pub fn is_supported_audio(path: &Path) -> bool {
@@ -88,7 +31,6 @@ pub fn is_supported_audio(path: &Path) -> bool {
 }
 
 /// Biblioteca guardada en disco (arranque rápido); `None` si no hay caché o está vacía.
-#[allow(dead_code)] // se conecta en la Tarea 4
 pub fn load_cached_library() -> Option<Vec<Song>> {
     let content = fs::read_to_string(get_library_cache_path()).ok()?;
     let mut songs: Vec<Song> = serde_json::from_str(&content).ok()?;
@@ -109,7 +51,6 @@ pub fn load_cached_library() -> Option<Vec<Song>> {
 
 /// Canciones de todas las carpetas, en orden y sin repetir rutas. Una carpeta que no existe o no se
 /// puede leer se omite con un aviso. No escribe la caché.
-#[allow(dead_code)] // se conecta en la Tarea 4
 pub fn scan_folders(folders: &[String], covers_dir: &Path) -> Vec<Song> {
     let mut seen = HashSet::new();
     let mut songs = Vec::new();
@@ -130,7 +71,6 @@ pub fn scan_folders(folders: &[String], covers_dir: &Path) -> Vec<Song> {
 }
 
 /// `scan_folders` más la escritura de la caché (JSON ligero para el próximo arranque).
-#[allow(dead_code)] // se conecta en la Tarea 4
 pub fn scan_and_cache(folders: &[String]) -> Vec<Song> {
     let songs = scan_folders(folders, &get_covers_dir());
     if let Ok(json) = serde_json::to_string(&songs) {

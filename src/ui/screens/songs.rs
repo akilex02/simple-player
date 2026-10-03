@@ -15,12 +15,13 @@ const COVER: f32 = 40.0;
 /// Canciones de la biblioteca, de un artista o de un álbum, con encabezado y tabla virtualizada.
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache) {
     if state.songs.is_empty() {
-        let (title, subtitle, cta) = match &state.current_folder_path {
-            Some(path) => (format!("No hay canciones en «{path}»"), "Prueba con otra carpeta.", "Elegir otra carpeta"),
-            None => ("Elige tu carpeta de música".to_string(), "Simple Player buscará tus canciones ahí.", "Abrir carpeta"),
+        let (title, subtitle, cta) = if state.settings.music_folders.is_empty() {
+            ("Elige tu carpeta de música".to_string(), "Simple Player buscará tus canciones ahí.", "Elegir carpeta")
+        } else {
+            ("No hay canciones en tus carpetas".to_string(), "Prueba agregando otra carpeta.", "Agregar carpeta")
         };
         if empty_state(ui, icons::FOLDER_OPEN, &title, subtitle, Some(cta)) {
-            state.select_folder_and_scan();
+            state.add_folder_via_dialog();
         }
         return;
     }
