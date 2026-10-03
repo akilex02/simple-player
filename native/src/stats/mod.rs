@@ -1,7 +1,9 @@
 pub mod format;
 pub mod aggregate;
+pub mod demo;
 pub mod location;
 pub mod model;
+pub mod recorder;
 pub mod service;
 pub mod session;
 pub mod store;
