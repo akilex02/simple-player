@@ -129,6 +129,7 @@ impl App {
         }
         state.is_fullscreen = std::env::args().any(|a| a == "--fullscreen");
         let mut fullscreen_view = ui::fullscreen::FullscreenView::default();
+        fullscreen_view.mode = state.settings.visualizer_mode();
         if let Some(mode) = ui::gallery::arg_value("--viz").and_then(|v| ui::visualizers::VisualizerMode::from_name(&v)) {
             fullscreen_view.mode = mode;
         }
@@ -551,10 +552,9 @@ fn main() -> eframe::Result<()> {
         std::env::var("HOME").ok().as_deref(),
     );
     let forced = ui::gallery::arg_value("--window-size").and_then(|v| window_state::parse_size_arg(&v));
-    let initial = forced
-        .or_else(|| if dev_window { None } else { window_state::load(&saved_path) })
-        .unwrap_or(window_state::DEFAULT_SIZE);
-    let window_state_path = (!dev_window && forced.is_none()).then_some(saved_path);
+    let use_saved = window_state::use_saved_size(dev_window, forced.is_some(), settings.remember_window_size);
+    let initial = forced.or_else(|| if use_saved { window_state::load(&saved_path) } else { None }).unwrap_or(window_state::DEFAULT_SIZE);
+    let window_state_path = use_saved.then_some(saved_path);
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([initial.width, initial.height])

@@ -62,7 +62,6 @@ impl Settings {
         self.music_folders.len() != before
     }
 
-    #[allow(dead_code)] // lo usa el arranque (Tarea 5)
     pub fn visualizer_mode(&self) -> VisualizerMode {
         VisualizerMode::from_name(&self.default_visualizer).unwrap_or(VisualizerMode::Bars)
     }

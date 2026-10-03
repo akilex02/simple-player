@@ -35,6 +35,12 @@ pub fn window_state_path(xdg_config_home: Option<&str>, home: Option<&str>) -> P
     base.join("simple-player").join("window.json")
 }
 
+/// ¿Se lee y se guarda el tamaño de `window.json`? Solo en una ejecución normal (ni desarrollo ni
+/// `--window-size`) y si el usuario no lo desactivó en Configuración.
+pub fn use_saved_size(dev_run: bool, forced: bool, remember: bool) -> bool {
+    !dev_run && !forced && remember
+}
+
 pub fn parse(json: &str) -> Option<WindowSize> {
     serde_json::from_str::<WindowSize>(json).ok()?.sanitized()
 }
@@ -136,5 +142,13 @@ mod tests {
         assert_eq!(parse_size_arg("854X658"), Some(size(854.0, 658.0)));
         assert_eq!(parse_size_arg("854"), None);
         assert_eq!(parse_size_arg("axb"), None);
+    }
+
+    #[test]
+    fn el_tamano_guardado_solo_se_usa_en_una_ejecucion_normal_con_la_opcion_activa() {
+        assert!(use_saved_size(false, false, true));
+        assert!(!use_saved_size(false, false, false), "el usuario lo desactivó");
+        assert!(!use_saved_size(true, false, true), "corrida de desarrollo");
+        assert!(!use_saved_size(false, true, true), "--window-size manda");
     }
 }
