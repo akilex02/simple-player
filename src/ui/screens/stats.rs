@@ -101,7 +101,8 @@ fn tiles(ui: &mut egui::Ui, summary: &StatsSummary) {
                 ui.set_width(width - 2.0 * space::LG);
                 ui.vertical(|ui| {
                     ui.label(RichText::new(label).size(text::SM).color(theme::TEXT_MUTED));
-                    ui.label(RichText::new(value).font(theme::bold(text::XL + 4.0)));
+                    // Art Deco Bold es más ancha que Noto Sans: a XL + 4 "1 h 38 min" se partía en dos líneas.
+                    ui.add(egui::Label::new(RichText::new(value).font(theme::bold(text::XL))).wrap_mode(egui::TextWrapMode::Extend));
                 });
             });
         }

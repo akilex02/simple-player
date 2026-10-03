@@ -1,8 +1,10 @@
 pub mod blur;
 pub mod color;
+pub mod fonts;
 pub mod icons;
 
-use eframe::egui::{self, Color32, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle};
+use eframe::egui::{self, Color32, FontFamily, FontId, Stroke, TextStyle};
+use fonts::{FONT_BOLD, FONT_CONDENSED};
 
 // ── Paleta ────────────────────────────────────────────────────────────────
 pub const BG_BASE: Color32 = Color32::from_rgb(0x0e, 0x0e, 0x1b);
@@ -122,10 +124,6 @@ mod motion_tests {
 }
 
 // ── Fuentes ───────────────────────────────────────────────────────────────
-pub const FONT_CONDENSED: &str = "GTAArtDecoCondensed";
-pub const FONT_REGULAR: &str = "GTAArtDeco";
-pub const FONT_BOLD: &str = "NotoSansBold";
-
 /// Texto de interfaz en negrita (egui no tiene pesos: es otra familia).
 pub fn bold(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(FONT_BOLD.into()))
@@ -159,43 +157,6 @@ pub fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
         mix(a.b(), b.b()),
         mix(a.a(), b.a()),
     )
-}
-
-fn install_fonts(ctx: &egui::Context) {
-    let mut fonts = FontDefinitions::default();
-
-    let font_files: &[(&str, &[u8])] = &[
-        (FONT_REGULAR, include_bytes!("../../assets/fonts/GTAArtDeco_Regular.ttf")),
-        (FONT_CONDENSED, include_bytes!("../../assets/fonts/GTAArtDeco_CondensedBold.ttf")),
-        ("NotoSans", include_bytes!("../../assets/fonts/NotoSans-Regular.ttf")),
-        (FONT_BOLD, include_bytes!("../../assets/fonts/NotoSans-Bold.ttf")),
-    ];
-    for (name, bytes) in font_files {
-        fonts.font_data.insert(name.to_string(), FontData::from_static(bytes));
-    }
-
-    // Interfaz: Noto Sans primero, luego Phosphor (íconos) y las fuentes por
-    // defecto de egui, que aportan cobertura de emoji.
-    fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "NotoSans".into());
-    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-
-    let fallback: Vec<String> = fonts.families[&FontFamily::Proportional]
-        .iter()
-        .filter(|name| name.as_str() != "NotoSans")
-        .cloned()
-        .collect();
-
-    let named: [(&str, &str); 2] = [(FONT_BOLD, FONT_BOLD), (FONT_CONDENSED, FONT_CONDENSED)];
-    for (family, primary) in named {
-        let mut chain = vec![primary.to_string(), "NotoSans".to_string()];
-        chain.extend(fallback.iter().cloned());
-        fonts.families.insert(FontFamily::Name(family.into()), chain);
-    }
-    let mut regular = vec![FONT_REGULAR.to_string(), "NotoSans".to_string()];
-    regular.extend(fallback);
-    fonts.families.insert(FontFamily::Name(FONT_REGULAR.into()), regular);
-
-    ctx.set_fonts(fonts);
 }
 
 fn install_style(ctx: &egui::Context) {
@@ -249,6 +210,6 @@ fn install_style(ctx: &egui::Context) {
 
 /// Instala fuentes y el estilo global (colores, radios, tipografía).
 pub fn install(ctx: &egui::Context) {
-    install_fonts(ctx);
+    ctx.set_fonts(fonts::build_font_definitions());
     install_style(ctx);
 }
