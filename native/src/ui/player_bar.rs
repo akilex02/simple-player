@@ -2,9 +2,10 @@ use super::textures::TextureCache;
 use super::{progress, transport, volume, Size};
 use crate::state::AppState;
 use crate::theme;
+use crate::viz::VizFrame;
 use eframe::egui;
 
-pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache, spectrum: &[f32]) {
+pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache, viz: &VizFrame) {
     ui.horizontal(|ui| {
         let cover_path = state.current_song().and_then(|s| s.cover_art.clone());
         super::cover_thumb(ui, textures, &cover_path, 64.0, 10.0, "🎧");
@@ -33,16 +34,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
 
         // ── Espectro en vivo (miniatura) ──────────────────────────────────
         let (_, rect) = ui.allocate_space(egui::vec2(180.0, 50.0));
-        let painter = ui.painter_at(rect);
-        let gap = 2.0;
-        let bar_width = (rect.width() - gap * (spectrum.len() as f32 - 1.0)) / spectrum.len() as f32;
-        for (i, db) in spectrum.iter().enumerate() {
-            let norm = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
-            let h = norm * rect.height();
-            let x = rect.left() + i as f32 * (bar_width + gap);
-            let bar = egui::Rect::from_min_size(egui::pos2(x, rect.bottom() - h), egui::vec2(bar_width, h));
-            painter.rect_filled(bar, 1.0, theme::ACCENT_PINK);
-        }
+        super::visualizers::bars::draw(&ui.painter_at(rect), rect, viz);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("⛶").on_hover_text("Pantalla completa").clicked() {

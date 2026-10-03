@@ -1,10 +1,11 @@
-use super::normalize_db;
 use crate::theme;
+use crate::viz::VizFrame;
 use eframe::egui;
 
 /// Barras distribuidas en círculo, centradas en la pantalla — mismo mapeo
 /// que `RadialSpectrum.tsx`.
-pub fn draw(painter: &egui::Painter, rect: egui::Rect, spectrum: &[f32]) {
+pub fn draw(painter: &egui::Painter, rect: egui::Rect, frame: &VizFrame) {
+    let spectrum = &frame.bars;
     if spectrum.is_empty() {
         return;
     }
@@ -14,8 +15,7 @@ pub fn draw(painter: &egui::Painter, rect: egui::Rect, spectrum: &[f32]) {
     let max_bar_len = short_side * 0.22;
     let line_width = ((std::f32::consts::TAU * inner_radius) / n as f32 * 0.6).max(2.0);
 
-    for (i, db) in spectrum.iter().enumerate() {
-        let norm = normalize_db(*db);
+    for (i, norm) in spectrum.iter().enumerate() {
         let bar_len = norm * max_bar_len;
         let angle = (i as f32 / n as f32) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
         let (sin, cos) = angle.sin_cos();

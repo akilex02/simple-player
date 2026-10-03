@@ -2,6 +2,7 @@ pub mod bars;
 pub mod glow;
 pub mod radial;
 
+use crate::viz::VizFrame;
 use eframe::egui;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -29,19 +30,11 @@ impl VisualizerMode {
     }
 }
 
-/// Rango de magnitudes del elemento `spectrum` de GStreamer (dB).
-pub const MIN_DB: f32 = -60.0;
-pub const MAX_DB: f32 = 0.0;
-
-pub fn normalize_db(db: f32) -> f32 {
-    ((db - MIN_DB) / (MAX_DB - MIN_DB)).clamp(0.0, 1.0)
-}
-
-pub fn draw(ui: &egui::Ui, rect: egui::Rect, spectrum: &[f32], mode: VisualizerMode) {
+pub fn draw(ui: &egui::Ui, rect: egui::Rect, frame: &VizFrame, mode: VisualizerMode) {
     let painter = ui.painter_at(rect);
     match mode {
-        VisualizerMode::Bars => bars::draw(&painter, rect, spectrum),
-        VisualizerMode::Radial => radial::draw(&painter, rect, spectrum),
-        VisualizerMode::Glow => glow::draw(&painter, rect, spectrum),
+        VisualizerMode::Bars => bars::draw(&painter, rect, frame),
+        VisualizerMode::Radial => radial::draw(&painter, rect, frame),
+        VisualizerMode::Glow => glow::draw(&painter, rect, frame),
     }
 }

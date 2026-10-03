@@ -17,21 +17,27 @@ use events::AppEvent;
 use gstreamer::prelude::*;
 use state::{ActiveTab, AppState};
 use std::sync::mpsc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use ui::textures::TextureCache;
 use ui::visualizers::VisualizerMode;
+use viz::{engine::VizEngine, VizFrame};
 
 struct App {
     state: AppState,
     hotkeys: Option<hotkeys::Hotkeys>,
     tx: mpsc::Sender<AppEvent>,
     rx: mpsc::Receiver<AppEvent>,
-    last_spectrum: Vec<f32>,
+    spectrum_ring: std::sync::Arc<audio::spectrum::SpectrumRing>,
+    viz_engine: VizEngine,
+    viz: VizFrame,
+    clock: audio::clock::PlaybackClock,
+    last_clock_sync: Instant,
+    last_draw: Instant,
+    viz_latency_secs: f64,
     last_active_lyric_line: Option<usize>,
     visualizer_mode: VisualizerMode,
     textures: TextureCache,
     perf: perf::PerfHud,
-    prev_spectrum: Vec<f32>,
 }
 
 impl App {
@@ -41,9 +47,10 @@ impl App {
         let audio = audio::player::init();
         let (tx, rx) = mpsc::channel::<AppEvent>();
 
+        let spectrum_ring = std::sync::Arc::new(audio::spectrum::SpectrumRing::default());
         if let Ok(player) = audio.inner.lock() {
             if let Some(bus) = player.pipeline().bus() {
-                audio::spectrum::install_spectrum_watch(&bus, tx.clone());
+                audio::spectrum::install_spectrum_watch(&bus, std::sync::Arc::clone(&spectrum_ring));
             }
         }
 
@@ -64,27 +71,60 @@ impl App {
             hotkeys,
             tx,
             rx,
-            last_spectrum: vec![-60.0; 32],
+            spectrum_ring,
+            viz_engine: VizEngine::new(),
+            viz: VizFrame::default(),
+            clock: audio::clock::PlaybackClock::new(Instant::now()),
+            last_clock_sync: Instant::now(),
+            last_draw: Instant::now(),
+            viz_latency_secs: 0.0,
             last_active_lyric_line: None,
             visualizer_mode: VisualizerMode::Bars,
             textures: TextureCache::default(),
             perf: perf::PerfHud::new(),
-            prev_spectrum: Vec::new(),
         }
     }
 
     fn handle_events(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             match event {
-                AppEvent::Spectrum(values) => {
-                    self.perf.on_spectrum(Instant::now());
-                    self.last_spectrum = values;
-                }
                 AppEvent::MediaPrev => self.state.handle_prev_song(),
                 AppEvent::MediaNext => self.state.handle_next_song(),
                 AppEvent::MediaPlayPause => self.state.toggle_play_pause(),
                 AppEvent::MediaPlaying(playing) => self.state.is_playing = playing,
             }
+        }
+    }
+
+    /// Mete los frames nuevos de espectro al motor y calcula las barras del
+    /// instante de reproducción actual (reloj estimado menos la latencia ajustada).
+    fn update_viz(&mut self) {
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_draw).as_secs_f32().min(0.1);
+        self.last_draw = now;
+
+        let frames = self.spectrum_ring.try_drain();
+        for frame in &frames {
+            self.perf.on_spectrum(frame.arrived);
+        }
+        self.viz_engine.ingest(frames);
+
+        let playing = self.state.is_playing;
+        self.clock.set_playing(playing, now);
+        if now.duration_since(self.last_clock_sync) >= Duration::from_millis(100) {
+            if let Some(pos) = self.state.audio.try_position_secs() {
+                self.clock.resync(pos, now);
+            }
+            self.last_clock_sync = now;
+        }
+
+        let clock_now = self.clock.now(now);
+        self.viz = self.viz_engine.update(clock_now - self.viz_latency_secs, dt, playing).clone();
+        if playing {
+            if let Some(newest) = self.viz_engine.newest_time() {
+                self.perf.record_spectrum_lead((newest - clock_now) * 1000.0);
+            }
+            self.perf.record_underrun(self.viz_engine.underrun());
         }
     }
 
@@ -107,6 +147,12 @@ impl App {
             if i.key_pressed(egui::Key::F3) {
                 self.perf.toggle();
             }
+            if i.key_pressed(egui::Key::F4) {
+                self.viz_latency_secs -= 0.010;
+            }
+            if i.key_pressed(egui::Key::F5) {
+                self.viz_latency_secs += 0.010;
+            }
         });
     }
 }
@@ -115,7 +161,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.perf.begin_frame(Instant::now());
         self.draw(ctx);
-        self.perf.show(ctx);
+        self.perf.show(ctx, self.viz_latency_secs * 1000.0);
         self.perf.end_frame(Instant::now());
     }
 }
@@ -133,8 +179,7 @@ impl App {
         let tick_start = Instant::now();
         self.state.tick();
         self.perf.record_tick(tick_start.elapsed());
-        self.perf.record_viz_frame(self.last_spectrum == self.prev_spectrum);
-        self.prev_spectrum.clone_from(&self.last_spectrum);
+        self.update_viz();
         self.state.ensure_lyrics_for_current_song();
 
         if self.state.is_fullscreen {
@@ -143,7 +188,7 @@ impl App {
                 &mut self.state,
                 &mut self.textures,
                 &mut self.last_active_lyric_line,
-                &self.last_spectrum,
+                &self.viz,
                 &mut self.visualizer_mode,
             );
             return;
@@ -161,7 +206,7 @@ impl App {
             .exact_height(96.0)
             .frame(egui::Frame::none().fill(theme::BG_CARD).inner_margin(16.0))
             .show(ctx, |ui| {
-                ui::player_bar::show(ui, &mut self.state, &mut self.textures, &self.last_spectrum);
+                ui::player_bar::show(ui, &mut self.state, &mut self.textures, &self.viz);
             });
 
         egui::CentralPanel::default()

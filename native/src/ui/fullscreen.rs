@@ -3,6 +3,7 @@ use super::visualizers::{self, VisualizerMode};
 use super::{lyrics_panel, progress, transport, volume, Size};
 use crate::state::AppState;
 use crate::theme;
+use crate::viz::VizFrame;
 use eframe::egui;
 
 /// Overlay de pantalla completa: portada/info a la izquierda, letras a la
@@ -15,7 +16,7 @@ pub fn show(
     state: &mut AppState,
     textures: &mut TextureCache,
     last_active_lyric: &mut Option<usize>,
-    spectrum: &[f32],
+    viz: &VizFrame,
     visualizer_mode: &mut VisualizerMode,
 ) {
     egui::CentralPanel::default()
@@ -23,7 +24,7 @@ pub fn show(
         .show(ctx, |ui| {
             // Fondo: visualizador a pantalla completa + scrim oscuro para legibilidad.
             let full_rect = ui.max_rect();
-            visualizers::draw(ui, full_rect, spectrum, *visualizer_mode);
+            visualizers::draw(ui, full_rect, viz, *visualizer_mode);
             ui.painter_at(full_rect).rect_filled(
                 full_rect,
                 0.0,

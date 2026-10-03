@@ -3,8 +3,6 @@
 /// de `App::update()` los consume con `try_recv()` al inicio de cada frame.
 #[derive(Debug, Clone)]
 pub enum AppEvent {
-    /// Magnitudes del elemento `spectrum` (32 bandas, en dB), ~20 veces/seg.
-    Spectrum(Vec<f32>),
     MediaPrev,
     MediaNext,
     MediaPlayPause,

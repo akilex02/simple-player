@@ -1,17 +1,17 @@
-use super::normalize_db;
 use crate::theme;
+use crate::viz::VizFrame;
 use eframe::egui;
 
 /// Resplandor radial que pulsa con el volumen promedio — aproxima el
 /// `radial-gradient` + `transform: scale`/`opacity` de `GlowPulse.tsx` con un
 /// círculo semitransparente, ya que `egui::Painter` no tiene degradados
 /// nativos en sus primitivas de relleno.
-pub fn draw(painter: &egui::Painter, rect: egui::Rect, spectrum: &[f32]) {
+pub fn draw(painter: &egui::Painter, rect: egui::Rect, frame: &VizFrame) {
+    let spectrum = &frame.bars;
     if spectrum.is_empty() {
         return;
     }
-    let avg_db = spectrum.iter().sum::<f32>() / spectrum.len() as f32;
-    let norm = normalize_db(avg_db);
+    let norm = (spectrum.iter().sum::<f32>() / spectrum.len() as f32 * 1.4).clamp(0.0, 1.0);
 
     let short_side = rect.width().min(rect.height());
     let radius = short_side * (0.28 + norm * 0.14);

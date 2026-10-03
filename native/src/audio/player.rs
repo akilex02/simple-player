@@ -60,6 +60,13 @@ impl AudioPlayer {
         Ok(())
     }
 
+    /// Posición con resolución de nanosegundos, sin bloquear: `None` si otro
+    /// hilo (MPRIS, atajos) tiene el lock o no hay posición todavía.
+    pub fn try_position_secs(&self) -> Option<f64> {
+        let player = self.inner.try_lock().ok()?;
+        Some(player.position()?.nseconds() as f64 / 1e9)
+    }
+
     /// Posición de reproducción actual en segundos.
     pub fn position_secs(&self) -> u64 {
         if let Ok(player) = self.inner.lock() {
@@ -91,9 +98,10 @@ pub fn build_audio_filter_bin(normalize: bool) -> Option<gst::Bin> {
         && gst::ElementFactory::find("rgvolume").is_some()
         && gst::ElementFactory::find("rglimiter").is_some();
 
-    // 32 bandas @ 50ms (20 actualizaciones/seg) es de sobra para que el
-    // visualizador se vea fluido sin generar tráfico de eventos innecesario.
-    let spectrum_desc = "spectrum name=spectrum bands=32 interval=50000000 message-magnitude=true threshold=-60";
+    // 1024 bandas (~21 Hz cada una) para tener resolución en graves; la UI las
+    // agrupa en barras logarítmicas. 25 ms = 40 mensajes/seg, que el visualizador
+    // interpola según su `stream-time`.
+    let spectrum_desc = "spectrum name=spectrum bands=1024 interval=25000000 message-magnitude=true threshold=-60";
 
     let desc = match (has_spectrum, has_replaygain) {
         (true, true) => format!("{spectrum_desc} ! rgvolume fallback-gain=0.0 ! rglimiter"),

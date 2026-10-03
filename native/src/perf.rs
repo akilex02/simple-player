@@ -91,7 +91,8 @@ pub struct PerfHud {
     frame_interval_ms: Samples,
     spectrum_interval_ms: Samples,
     tick_ms: Samples,
-    viz_unchanged: FlagRatio,
+    spectrum_lead_ms: Samples,
+    underrun: FlagRatio,
     frame_start: Option<Instant>,
     last_frame_start: Option<Instant>,
     last_spectrum_at: Option<Instant>,
@@ -105,7 +106,8 @@ impl PerfHud {
             frame_interval_ms: Samples::new(600),
             spectrum_interval_ms: Samples::new(200),
             tick_ms: Samples::new(600),
-            viz_unchanged: FlagRatio::new(600),
+            spectrum_lead_ms: Samples::new(600),
+            underrun: FlagRatio::new(600),
             frame_start: None,
             last_frame_start: None,
             last_spectrum_at: None,
@@ -137,15 +139,20 @@ impl PerfHud {
         self.tick_ms.push(elapsed.as_secs_f64() * 1000.0);
     }
 
-    pub fn record_viz_frame(&mut self, unchanged: bool) {
-        self.viz_unchanged.push(unchanged);
+    /// Cuánto va el último frame de espectro por delante del reloj (negativo = atrasado).
+    pub fn record_spectrum_lead(&mut self, lead_ms: f64) {
+        self.spectrum_lead_ms.push(lead_ms);
+    }
+
+    pub fn record_underrun(&mut self, underrun: bool) {
+        self.underrun.push(underrun);
     }
 
     pub fn toggle(&mut self) {
         self.visible = !self.visible;
     }
 
-    pub fn show(&self, ctx: &egui::Context) {
+    pub fn show(&self, ctx: &egui::Context, latency_ms: f64) {
         if !self.visible {
             return;
         }
@@ -168,7 +175,9 @@ impl PerfHud {
             row("Intervalo espectro", &self.spectrum_interval_ms),
             format!("Jitter espectro p95 {:.2} ms", self.spectrum_jitter_p95()),
             format!("Edad último espectro {age:.1} ms"),
-            format!("Viz sin cambio     {:.0} % de frames", self.viz_unchanged.ratio() * 100.0),
+            row("Espectro adelantado", &self.spectrum_lead_ms),
+            format!("Viz sin datos nuevos {:.0} % (underrun)", self.underrun.ratio() * 100.0),
+            format!("Compensación latencia {latency_ms:+.0} ms (F4 -10 / F5 +10)"),
             row("state.tick()", &self.tick_ms),
         ];
         egui::Area::new(egui::Id::new("perf_hud"))
