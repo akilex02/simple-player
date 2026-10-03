@@ -19,11 +19,11 @@ const STRIP_H: f32 = 84.0;
 const TRANSPORT_TOP: f32 = 20.0;
 const TRANSPORT_H: f32 = 64.0;
 /// Alto de la fila de la línea de tiempo y separación con los botones.
-const PROGRESS_H: f32 = 24.0;
-const CONTROLS_GAP: f32 = 10.0;
+const PROGRESS_H: f32 = 22.0;
+const CONTROLS_GAP: f32 = 8.0;
 /// Margen interno del panel que agrupa los controles principales.
-const PANEL_PAD_X: f32 = 28.0;
-const PANEL_PAD_Y: f32 = 16.0;
+const PANEL_PAD_X: f32 = 20.0;
+const PANEL_PAD_Y: f32 = 12.0;
 
 /// Pantalla completa "Ahora suena": un overlay que aparece y desaparece con
 /// fundido sobre la app. Portada grande, fondo desenfocado, visualizador como
@@ -187,6 +187,8 @@ impl FullscreenView {
         ui.painter().rect_filled(panel, theme::radius::XL, with_alpha(accent, 30));
 
         let mut main_controls = ui.new_child(egui::UiBuilder::new().max_rect(center).layout(egui::Layout::top_down(egui::Align::Center)));
+        // Sin espacio automático entre filas: el alto del panel se calcula con las constantes de arriba.
+        main_controls.spacing_mut().item_spacing.y = 0.0;
         // Mismo orden que la barra inferior: botones arriba, línea de tiempo debajo.
         main_controls.add_space(TRANSPORT_TOP);
         transport::show(&mut main_controls, state, Size::Large);
