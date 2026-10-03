@@ -2,7 +2,8 @@ use super::{SpectrumFrame, VizFrame};
 use std::collections::VecDeque;
 
 pub const BAR_COUNT: usize = 48;
-const HISTORY_CAP: usize = 64;
+// El audio llega a la app ~1.3 s antes de oírse; 256 frames (6.4 s) dan margen de sobra.
+const HISTORY_CAP: usize = 256;
 const MAX_GAP_SECS: f64 = 0.25;
 const NYQUIST_HZ: f32 = 22050.0;
 const F_LO: f32 = 40.0;
@@ -243,9 +244,9 @@ mod tests {
     #[test]
     fn el_historial_esta_acotado() {
         let mut e = VizEngine::new();
-        e.ingest((0..200).map(|i| frame(i as f64 * 0.025, vec![-10.0])));
-        assert_eq!(e.history_len(), 64);
-        assert_eq!(e.newest_time(), Some(199.0 * 0.025));
+        e.ingest((0..400).map(|i| frame(i as f64 * 0.025, vec![-10.0])));
+        assert_eq!(e.history_len(), 256);
+        assert_eq!(e.newest_time(), Some(399.0 * 0.025));
     }
 
     // ── rebin_log ──────────────────────────────────────────────────────────
