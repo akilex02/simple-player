@@ -2,6 +2,7 @@ mod audio;
 mod events;
 mod hotkeys;
 mod library;
+mod library_view;
 mod lyrics;
 mod mpris;
 mod paths;

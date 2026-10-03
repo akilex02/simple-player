@@ -18,7 +18,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
 
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
-            for group in &groups {
+            for group in groups.iter() {
                 ui.allocate_ui(egui::vec2(200.0, 160.0), |ui| {
                     egui::Frame::none()
                         .fill(theme::BG_CARD)

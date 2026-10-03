@@ -1,11 +1,13 @@
 use crate::audio::AudioPlayer;
 use crate::library::{scan_music_folder, select_folder, Song};
+use crate::library_view::{self, LibraryView};
 use crate::lyrics::{self, Lyrics};
 use crate::mpris::MprisMsg;
 use crate::persistence::{load_playback_state, save_playback_state, PlaybackState};
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use std::sync::mpsc::SyncSender;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActiveTab {
@@ -84,6 +86,8 @@ pub struct AppState {
     mpris_tx: SyncSender<MprisMsg>,
 
     pub songs: Vec<Song>,
+    songs_version: u64,
+    view: LibraryView,
     pub current_song_index: Option<usize>,
     pub active_queue: Vec<Song>,
     pub is_playing: bool,
@@ -120,6 +124,8 @@ impl AppState {
             audio,
             mpris_tx,
             songs: Vec::new(),
+            songs_version: 0,
+            view: LibraryView::default(),
             current_song_index: None,
             active_queue: Vec::new(),
             is_playing: false,
@@ -150,7 +156,7 @@ impl AppState {
     /// equivalente al `useEffect` de inicio en App.tsx.
     pub fn init(&mut self) {
         self.loading = true;
-        self.songs = scan_music_folder(None);
+        self.set_songs(scan_music_folder(None));
         self.loading = false;
 
         let Some(saved) = load_playback_state() else { return };
@@ -211,133 +217,39 @@ impl AppState {
 
     // ─── Datos derivados ────────────────────────────────────────────────────
 
-    /// Búsqueda con scoring tipo "Strawberry": tokeniza por espacios, suma
-    /// puntos por coincidencia en título/artista/álbum, descarta lo que no
-    /// matchea *todos* los tokens, ordena por relevancia.
-    pub fn filtered_songs(&self) -> Vec<&Song> {
-        let base: Vec<&Song> = match &self.selected_artist {
-            Some(artist) => self.songs.iter().filter(|s| &s.artist == artist).collect(),
-            None => self.songs.iter().collect(),
-        };
-
-        let query = self.search_query.trim().to_lowercase();
-        if query.is_empty() {
-            return base;
-        }
-        let tokens: Vec<&str> = query.split_whitespace().collect();
-
-        let mut scored: Vec<(i32, &Song)> = base
-            .into_iter()
-            .filter_map(|s| {
-                let title_l = s.title.to_lowercase();
-                let artist_l = s.artist.to_lowercase();
-                let album_l = s.album.to_lowercase();
-                let mut score = 0;
-                for tok in &tokens {
-                    if title_l.starts_with(tok) {
-                        score += 10;
-                    } else if title_l.contains(&format!(" {tok}")) {
-                        score += 8;
-                    } else if title_l.contains(tok) {
-                        score += 5;
-                    }
-                    if artist_l.starts_with(tok) {
-                        score += 9;
-                    } else if artist_l.contains(tok) {
-                        score += 4;
-                    }
-                    if album_l.starts_with(tok) {
-                        score += 7;
-                    } else if album_l.contains(tok) {
-                        score += 3;
-                    }
-                }
-                let all_match = tokens
-                    .iter()
-                    .all(|tok| title_l.contains(tok) || artist_l.contains(tok) || album_l.contains(tok));
-                all_match.then_some((score, s))
-            })
-            .collect();
-
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
-        scored.into_iter().map(|(_, s)| s).collect()
-    }
-
+    /// Lista tal como la ve la tabla (para armar colas al reproducir). Para
+    /// dibujar cada frame usar `visible_song_indices`, que está cacheada.
     pub fn sorted_songs(&self) -> Vec<&Song> {
-        let filtered = self.filtered_songs();
-        if !self.search_query.trim().is_empty() {
-            return filtered; // ya viene ordenado por relevancia
-        }
-
-        let mut result = filtered;
-        result.sort_by(|a, b| {
-            let cmp = match self.sort_field {
-                SortField::Title => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
-                SortField::Artist => a.artist.to_lowercase().cmp(&b.artist.to_lowercase()),
-                SortField::Album => a.album.to_lowercase().cmp(&b.album.to_lowercase()),
-                SortField::Duration => a.duration_secs.cmp(&b.duration_secs),
-            };
-            match self.sort_direction {
-                SortDirection::Asc => cmp,
-                SortDirection::Desc => cmp.reverse(),
-            }
-        });
-        result
+        library_view::filter_sort(
+            &self.songs,
+            &self.search_query,
+            self.selected_artist.as_deref(),
+            self.sort_field,
+            self.sort_direction,
+        )
+        .into_iter()
+        .map(|i| &self.songs[i])
+        .collect()
     }
 
-    pub fn artist_groups(&self) -> Vec<ArtistGroup> {
-        let query = self.search_query.trim().to_lowercase();
-        let tokens: Vec<&str> = query.split_whitespace().collect();
+    pub fn visible_song_indices(&mut self) -> Arc<Vec<usize>> {
+        self.view.songs(
+            &self.songs,
+            self.songs_version,
+            &self.search_query,
+            self.selected_artist.as_deref(),
+            self.sort_field,
+            self.sort_direction,
+        )
+    }
 
-        let songs_to_group: Vec<&Song> = if tokens.is_empty() {
-            self.songs.iter().collect()
-        } else {
-            self.songs
-                .iter()
-                .filter(|s| {
-                    let title_l = s.title.to_lowercase();
-                    let artist_l = s.artist.to_lowercase();
-                    let album_l = s.album.to_lowercase();
-                    tokens
-                        .iter()
-                        .all(|tok| title_l.contains(tok) || artist_l.contains(tok) || album_l.contains(tok))
-                })
-                .collect()
-        };
+    pub fn artist_groups(&mut self) -> Arc<Vec<ArtistGroup>> {
+        self.view.groups(&self.songs, self.songs_version, &self.search_query, self.artist_sort_order)
+    }
 
-        let mut map: HashMap<String, Vec<&Song>> = HashMap::new();
-        for song in songs_to_group {
-            let artist = if song.artist.trim().is_empty() {
-                "Artista Desconocido".to_string()
-            } else {
-                song.artist.clone()
-            };
-            map.entry(artist).or_default().push(song);
-        }
-
-        let mut groups: Vec<ArtistGroup> = map
-            .into_iter()
-            .map(|(artist, songs)| {
-                let representative_cover = songs
-                    .iter()
-                    .find(|s| s.cover_art.is_some())
-                    .and_then(|s| s.cover_art.clone());
-                ArtistGroup {
-                    artist,
-                    count: songs.len(),
-                    representative_cover,
-                }
-            })
-            .collect();
-
-        groups.sort_by(|a, b| {
-            let cmp = a.artist.to_lowercase().cmp(&b.artist.to_lowercase());
-            match self.artist_sort_order {
-                SortDirection::Asc => cmp,
-                SortDirection::Desc => cmp.reverse(),
-            }
-        });
-        groups
+    fn set_songs(&mut self, songs: Vec<Song>) {
+        self.songs = songs;
+        self.songs_version += 1;
     }
 
     /// Fuente de verdad de "canción actual": viene de `active_queue`, no de
@@ -582,7 +494,7 @@ impl AppState {
 
     pub fn scan_folder(&mut self, folder: Option<String>) {
         self.loading = true;
-        self.songs = scan_music_folder(folder);
+        self.set_songs(scan_music_folder(folder));
         self.loading = false;
     }
 

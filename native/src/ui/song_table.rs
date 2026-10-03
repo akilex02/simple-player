@@ -20,9 +20,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
         ui.add_space(8.0);
     }
 
-    let songs: Vec<Song> = state.sorted_songs().into_iter().cloned().collect();
+    let indices = state.visible_song_indices();
 
-    if songs.is_empty() {
+    if indices.is_empty() {
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
             ui.label(egui::RichText::new("🎵").size(48.0));
@@ -46,7 +46,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
         )
         .clicked()
     {
-        state.start_shuffle_play(songs.clone());
+        state.start_shuffle_play(indices.iter().map(|&i| state.songs[i].clone()).collect());
     }
     ui.add_space(10.0);
 
@@ -68,9 +68,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
-        .show_rows(ui, ROW_HEIGHT, songs.len(), |ui, row_range| {
+        .show_rows(ui, ROW_HEIGHT, indices.len(), |ui, row_range| {
             for i in row_range {
-                let song = &songs[i];
+                let song = &state.songs[indices[i]];
                 let is_current = current_path.as_deref() == Some(song.path.as_str());
 
                 let row_rect = ui
@@ -115,7 +115,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
         });
 
     if let Some(song) = clicked_song {
-        state.handle_play_song_from_list(&song, Some(songs));
+        let queue: Vec<Song> = indices.iter().map(|&i| state.songs[i].clone()).collect();
+        state.handle_play_song_from_list(&song, Some(queue));
     }
 }
 
