@@ -627,6 +627,7 @@ impl AppState {
             return Err("No disponible en ejecuciones de desarrollo".to_string());
         }
         desktop_integration::install(&Self::integration_paths(), &app, include_bytes!("../assets/icons/icon.png")).map_err(|e| e.to_string())?;
+        desktop_integration::refresh_caches(&Self::integration_paths());
         self.refresh_integration_status();
         Ok(())
     }
@@ -636,6 +637,7 @@ impl AppState {
             return Err("No disponible en ejecuciones de desarrollo".to_string());
         }
         desktop_integration::remove(&Self::integration_paths()).map_err(|e| e.to_string())?;
+        desktop_integration::refresh_caches(&Self::integration_paths());
         self.refresh_integration_status();
         Ok(())
     }

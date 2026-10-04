@@ -101,6 +101,39 @@ pub fn remove(paths: &Paths) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Comandos que refrescan las cachés del escritorio tras tocar el `.desktop` o el ícono.
+fn cache_commands(paths: &Paths) -> Vec<(&'static str, Vec<String>)> {
+    let mut cmds = Vec::new();
+    if let Some(dir) = paths.desktop.parent() {
+        cmds.push(("update-desktop-database", vec![dir.to_string_lossy().into_owned()]));
+    }
+    // .../icons/hicolor/512x512/apps/simple-player.png -> .../icons/hicolor
+    if let Some(theme) = paths.icon.ancestors().nth(3) {
+        cmds.push(("gtk-update-icon-cache", vec!["-f".into(), "-t".into(), theme.to_string_lossy().into_owned()]));
+    }
+    cmds.push(("kbuildsycoca6", vec![]));
+    cmds
+}
+
+/// Ejecuta cada comando en un hilo, uno tras otro, sin esperar y sin quejarse si no existe o falla.
+fn run_best_effort(cmds: Vec<(&'static str, Vec<String>)>) {
+    std::thread::spawn(move || {
+        for (prog, args) in cmds {
+            let _ = std::process::Command::new(prog)
+                .args(args)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    });
+}
+
+/// Pide al escritorio que relea el `.desktop` y el ícono (mejor esfuerzo; Plasma las cachea).
+pub fn refresh_caches(paths: &Paths) {
+    run_best_effort(cache_commands(paths));
+}
+
 /// ¿Se ofrece registrar la app? Solo como AppImage, si aún no está registrada (o apunta a otro sitio) y
 /// el usuario no lo descartó (para siempre o en esta sesión).
 pub fn should_prompt(is_appimage: bool, status: Status, dismissed_forever: bool, dismissed_session: bool) -> bool {
@@ -117,6 +150,20 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn los_comandos_de_cache_apuntan_a_las_carpetas_del_usuario() {
+        let p = paths(Some("/datos"), Some("/home/u"));
+        let cmds = cache_commands(&p);
+        assert!(cmds.contains(&("update-desktop-database", vec!["/datos/applications".to_string()])));
+        assert!(cmds.contains(&("gtk-update-icon-cache", vec!["-f".into(), "-t".into(), "/datos/icons/hicolor".into()])));
+        assert!(cmds.iter().any(|(prog, _)| *prog == "kbuildsycoca6"));
+    }
+
+    #[test]
+    fn un_comando_inexistente_se_omite_sin_error() {
+        run_best_effort(vec![("sp-comando-que-no-existe-xyz", vec![])]);
     }
 
     #[test]
