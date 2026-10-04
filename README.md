@@ -54,6 +54,8 @@ cd simple-player
 cargo run --release
 ```
 
+> **Controles multimedia en la barra de tareas (Plasma y similares):** el escritorio relaciona la ventana con su reproductor por medio del archivo `.desktop`. El AppImage y el paquete ya lo traen; si ejecutas la compilación local ejecuta una vez `scripts/install-desktop-entry.sh` (solo escribe en `~/.local/share`; `--remove` lo quita) y vuelve a abrir la app.
+
 > **Códecs:** para reproducir todos los formatos instala `gst-plugins-good`, `gst-plugins-bad`, `gst-plugins-ugly` y `gst-libav`. El selector de carpeta usa `xdg-desktop-portal`.
 
 ## Estructura del proyecto

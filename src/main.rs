@@ -564,7 +564,10 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([initial.width, initial.height])
         .with_min_inner_size(if forced.is_some() { [200.0, 200.0] } else { [window_state::MIN_SIZE.0, window_state::MIN_SIZE.1] })
-        .with_title("Simple Player");
+        .with_title("Simple Player")
+        // Debe coincidir con `assets/simple-player.desktop` (StartupWMClass) para que el escritorio
+        // relacione la ventana con su ícono y con los controles multimedia.
+        .with_app_id("simple-player");
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);
     }

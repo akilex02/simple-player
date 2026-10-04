@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Simple Player
+Comment=Reproductor de música local
+Exec=simple-player
+Icon=simple-player
+Categories=Audio;Music;Player;AudioVideo;
+StartupWMClass=simple-player

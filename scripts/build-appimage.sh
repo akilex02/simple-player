@@ -36,15 +36,7 @@ cp assets/icons/icon.png "$APPDIR/simple-player.png"
 cp assets/icons/icon.png "$APPDIR/.DirIcon"
 cp assets/icons/icon.png "$APPDIR/usr/share/icons/hicolor/512x512/apps/simple-player.png"
 
-cat << 'EOF2' > "$APPDIR/simple-player.desktop"
-[Desktop Entry]
-Name=Simple Player
-Exec=simple-player
-Icon=simple-player
-Type=Application
-Categories=Audio;Music;Player;AudioVideo;
-Comment=Simple Player Music Player
-EOF2
+cp assets/simple-player.desktop "$APPDIR/simple-player.desktop"
 cp "$APPDIR/simple-player.desktop" "$APPDIR/usr/share/applications/simple-player.desktop"
 
 # AppRun es obligatorio para que el runtime del AppImage ejecute la app.

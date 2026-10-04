@@ -39,7 +39,8 @@ pub fn spawn_mpris_thread(
         .name("mpris2".into())
         .spawn(move || {
             let config = PlatformConfig {
-                dbus_name: "simple_player",
+                // Igual al nombre del archivo .desktop: así el escritorio relaciona el reproductor con la ventana.
+                dbus_name: "simple-player",
                 display_name: "Simple Player",
                 hwnd: None,
             };
