@@ -76,6 +76,17 @@ fn path_to_uri(path: &str) -> String {
     }
 }
 
+/// Directorios de plugins del sistema que se añaden a GStreamer. Dentro de un AppImage autocontenido
+/// (`APPDIR` con sus propios plugins) no se añade ninguno: los del sistema se compilaron contra otra
+/// `glib` y mezclarlos con las bibliotecas empaquetadas produce fallos de símbolos y arranques lentos.
+fn system_plugin_paths(appdir: Option<&Path>, candidates: &[&str], exists: impl Fn(&Path) -> bool) -> Vec<String> {
+    let bundled = appdir.is_some_and(|dir| exists(&dir.join("usr/lib/gstreamer-1.0")));
+    if bundled {
+        return Vec::new();
+    }
+    candidates.iter().filter(|p| exists(Path::new(p))).map(|s| s.to_string()).collect()
+}
+
 /// Construye el bin de `audio-filter`: el analizador FFT `spectrum` que alimenta
 /// al visualizador. `None` si el plugin no está instalado (el visualizador se oculta).
 pub fn build_audio_filter_bin() -> Option<gst::Bin> {
@@ -100,18 +111,13 @@ fn enable_accurate_seek(player: &gst_player::Player) {
 /// verdad puede abrir el dispositivo, e instala el audio-filter inicial
 /// (spectrum).
 pub fn init() -> AudioPlayer {
-    // Configure GStreamer plugin search paths
-    let candidate_paths = [
-        "/usr/lib/gstreamer-1.0",
-        "/usr/lib64/gstreamer-1.0",
-        "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
-        "/usr/local/lib/gstreamer-1.0",
-    ];
-    let existing_paths: Vec<String> = candidate_paths
-        .iter()
-        .filter(|p| Path::new(p).exists())
-        .map(|s| s.to_string())
-        .collect();
+    // Rutas de plugins del sistema (no se añaden dentro de un AppImage con GStreamer propio).
+    let appdir = std::env::var_os("APPDIR").map(std::path::PathBuf::from);
+    let existing_paths = system_plugin_paths(
+        appdir.as_deref(),
+        &["/usr/lib/gstreamer-1.0", "/usr/lib64/gstreamer-1.0", "/usr/lib/x86_64-linux-gnu/gstreamer-1.0", "/usr/local/lib/gstreamer-1.0"],
+        |p| p.exists(),
+    );
 
     if !existing_paths.is_empty() {
         let current_path = std::env::var("GST_PLUGIN_PATH_1_0").unwrap_or_default();
@@ -175,5 +181,40 @@ mod tests {
         assert!(!player.config().is_seek_accurate(), "por defecto salta a keyframes");
         enable_accurate_seek(&player);
         assert!(player.config().is_seek_accurate());
+    }
+
+    const CANDIDATES: [&str; 3] = ["/usr/lib/gstreamer-1.0", "/usr/lib64/gstreamer-1.0", "/usr/local/lib/gstreamer-1.0"];
+
+    fn exists_in(paths: &'static [&'static str]) -> impl Fn(&Path) -> bool {
+        move |p| paths.iter().any(|x| Path::new(x) == p)
+    }
+
+    #[test]
+    fn fuera_de_un_appimage_se_usan_los_plugins_del_sistema_que_existan() {
+        let found = system_plugin_paths(None, &CANDIDATES, exists_in(&["/usr/lib/gstreamer-1.0", "/usr/local/lib/gstreamer-1.0"]));
+        assert_eq!(found, vec!["/usr/lib/gstreamer-1.0".to_string(), "/usr/local/lib/gstreamer-1.0".to_string()]);
+    }
+
+    #[test]
+    fn un_appimage_autocontenido_no_mezcla_plugins_del_sistema() {
+        let appdir = Path::new("/tmp/app");
+        let found = system_plugin_paths(
+            Some(appdir),
+            &CANDIDATES,
+            exists_in(&["/tmp/app/usr/lib/gstreamer-1.0", "/usr/lib/gstreamer-1.0"]),
+        );
+        assert!(found.is_empty(), "con GStreamer propio no se añade nada: {found:?}");
+    }
+
+    #[test]
+    fn un_appimage_ligero_sigue_usando_los_plugins_del_sistema() {
+        // APPDIR existe pero no trae plugins de GStreamer: usa los del sistema.
+        let found = system_plugin_paths(Some(Path::new("/tmp/app")), &CANDIDATES, exists_in(&["/usr/lib/gstreamer-1.0"]));
+        assert_eq!(found, vec!["/usr/lib/gstreamer-1.0".to_string()]);
+    }
+
+    #[test]
+    fn sin_ningun_directorio_existente_no_devuelve_nada() {
+        assert!(system_plugin_paths(None, &CANDIDATES, exists_in(&[])).is_empty());
     }
 }
