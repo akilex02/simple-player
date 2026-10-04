@@ -14,5 +14,7 @@ case "${1:-}" in
 esac
 
 sudo apt-get update
+# El runner trae libunwind-14-dev (de LLVM), que choca con el libunwind-dev que exige libgstreamer1.0-dev.
+sudo apt-get remove -y libunwind-14-dev || true
 # shellcheck disable=SC2086
 sudo apt-get install -y --no-install-recommends $PKGS
