@@ -24,6 +24,11 @@ pub fn get_playback_state_path() -> PathBuf {
     get_cache_dir().join("playback_state.json")
 }
 
+/// Archivo diminuto con la canción y el segundo en que se quedó (se escribe a menudo; el estado grande no).
+pub fn get_playback_position_path() -> PathBuf {
+    get_cache_dir().join("playback_position.json")
+}
+
 pub fn path_hash(path: &str) -> String {
     let mut h = DefaultHasher::new();
     path.hash(&mut h);

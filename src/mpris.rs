@@ -25,13 +25,9 @@ pub enum MprisMsg {
 }
 
 /// Spawn the MPRIS2 background thread and return a sender for updates.
-/// `player` is the shared GStreamer player.
 /// `app_tx` reemplaza el `AppHandle::emit` de Tauri: notifica a la app
 /// principal (vía `AppEvent`) cuando el usuario usa los controles del sistema.
-pub fn spawn_mpris_thread(
-    player: std::sync::Arc<std::sync::Mutex<gstreamer_player::Player>>,
-    app_tx: EventSender,
-) -> mpsc::SyncSender<MprisMsg> {
+pub fn spawn_mpris_thread(app_tx: EventSender) -> mpsc::SyncSender<MprisMsg> {
     // bounded=4: latest state wins; no need to queue many msgs
     let (tx, rx) = mpsc::sync_channel::<MprisMsg>(4);
 
@@ -54,21 +50,16 @@ pub fn spawn_mpris_thread(
             };
 
             // ── Event handler: user presses controls in taskbar / notifications ──
-            let player_ev = std::sync::Arc::clone(&player);
             let app_ev = app_tx.clone();
 
             // souvlaki 0.8 uses .attach() (not set_event_handler)
             let _ = controls.attach(move |event: MediaControlEvent| match event {
+                // Play/Pause los resuelve `AppState` (carga la canción restaurada y aplica su posición);
+                // mandar `play()` directo al reproductor no hacía nada si el archivo aún no estaba cargado.
                 MediaControlEvent::Play => {
-                    if let Ok(p) = player_ev.lock() {
-                        p.play();
-                    }
                     let _ = app_ev.send(AppEvent::MediaPlaying(true));
                 }
                 MediaControlEvent::Pause => {
-                    if let Ok(p) = player_ev.lock() {
-                        p.pause();
-                    }
                     let _ = app_ev.send(AppEvent::MediaPlaying(false));
                 }
                 MediaControlEvent::Toggle => {

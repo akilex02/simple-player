@@ -74,7 +74,7 @@ impl App {
             }
         }
 
-        let mpris_tx = mpris::spawn_mpris_thread(std::sync::Arc::clone(&audio.inner), sender.clone());
+        let mpris_tx = mpris::spawn_mpris_thread(sender.clone());
         // Las capturas de desarrollo no deben pelear los atajos con otra instancia
         // abierta: X responde con BadAccess y Xlib mata el proceso.
         let skip_hotkeys = std::env::args().any(|a| a == "--shot" || a == "--no-hotkeys");
@@ -183,7 +183,7 @@ impl App {
                 AppEvent::MediaPrev => self.state.handle_prev_song(),
                 AppEvent::MediaNext => self.state.handle_next_song(),
                 AppEvent::MediaPlayPause => self.state.toggle_play_pause(),
-                AppEvent::MediaPlaying(playing) => self.state.is_playing = playing,
+                AppEvent::MediaPlaying(playing) => self.state.set_playing(playing),
             }
         }
     }
@@ -364,6 +364,7 @@ impl eframe::App for App {
                 let _ = window_state::save(path, size);
             }
         }
+        self.state.save_position();
         self.state.stats.finish();
         self.state.stats.handle().flush(std::time::Duration::from_secs(1));
     }

@@ -8,6 +8,7 @@ Un reproductor de música local para Linux, rápido y con estética "liquid-glas
 - **Reproducción:** motor GStreamer (MP3, FLAC, AAC, WAV…), seek preciso, aleatorio, repetir, cola visible y control de volumen.
 - **Pantalla completa "Ahora suena":** portada grande, fondo desenfocado que sigue a la carátula y acento dinámico.
 - **Letras sincronizadas:** desde un `.lrc` junto a la canción o las etiquetas del archivo; la línea activa se resalta y un clic en una línea salta a ese momento.
+- **Retoma donde te quedaste:** al cerrar guarda la cola y el segundo en que ibas; al abrir queda en pausa en ese punto y continúa cuando das play (también con las teclas multimedia o los controles de la barra de tareas).
 - **Configuración:** varias carpetas de música, visualizador por defecto, recordar el tamaño de la ventana, exportar/importar/borrar el historial y restablecer de fábrica.
 - **Visualizadores:** barras, anillo alrededor de la portada, partículas, constelación, osciloscopio o franja inferior, alineados con el reloj de reproducción; con un clic mantenido las partículas siguen al cursor.
 - **Estadísticas de escucha:** tiempo total, reproducciones, tops de canciones, artistas y álbumes, días activos, rachas, sesiones y línea de tiempo por rango (hoy, semana, mes, año, todo).
@@ -88,7 +89,7 @@ cargo run --release
 
 | Qué | Dónde |
 |---|---|
-| Caché de la biblioteca y carátulas, y el estado de reproducción | `~/.cache/music-player/` |
+| Caché de la biblioteca y carátulas, estado de reproducción y posición de la canción | `~/.cache/music-player/` |
 | Historial de escucha (estadísticas) | `~/.local/share/simple-player/stats.db` (respeta `XDG_DATA_HOME`) |
 | Tamaño de la ventana (abre en 1050×750; mínimo 1000×650) | `~/.config/simple-player/window.json` (respeta `XDG_CONFIG_HOME`) |
 | Ajustes (carpetas de música, visualizador por defecto, recordar tamaño) | `~/.config/simple-player/settings.json` (respeta `XDG_CONFIG_HOME`) |

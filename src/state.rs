@@ -4,7 +4,10 @@ use crate::library::{load_cached_library, scan_and_cache, select_folder, Song};
 use crate::library_view::{self, AlbumGroup, LibraryView};
 use crate::lyrics::{self, Lyrics};
 use crate::mpris::MprisMsg;
-use crate::persistence::{load_playback_state, save_playback_state, PlaybackState};
+use crate::persistence::{
+    load_playback_position, load_playback_state, position_moved, restore_position, save_playback_position, save_playback_state,
+    PlaybackPosition, PlaybackState,
+};
 use crate::settings::{self, Settings};
 use crate::stats::model::{SongSnapshot, StatsRange};
 use crate::stats::recorder::StatsRecorder;
@@ -118,6 +121,12 @@ pub struct AppState {
     settings_path: Option<PathBuf>,
     /// `true` tras un restablecimiento de fábrica: al cerrar no se guarda el tamaño de la ventana.
     pub window_reset: bool,
+    /// Segundo en el que debe continuar la canción restaurada; se aplica cuando el reproductor ya cargó el archivo.
+    pending_resume: Option<f64>,
+    /// La canción restaurada al arrancar todavía no se cargó en el reproductor (no ha sonado).
+    restored_unloaded: bool,
+    last_saved_position: Option<f64>,
+    last_position_write: Instant,
     /// Solo desarrollo (`--scroll N`): desplazamiento inicial de la lista de canciones.
     pub dev_scroll: Option<f32>,
 
@@ -169,6 +178,10 @@ impl AppState {
             settings: Settings::default(),
             settings_path: None,
             window_reset: false,
+            pending_resume: None,
+            restored_unloaded: false,
+            last_saved_position: None,
+            last_position_write: Instant::now(),
             dev_scroll: None,
             active_tab: ActiveTab::All,
             selected_artist: None,
@@ -219,6 +232,9 @@ impl AppState {
                     .unwrap_or(0);
                 self.active_queue = restored_queue;
                 self.current_song_index = Some(restored_index);
+                // Queda en pausa en el punto donde se cerró; continúa cuando el usuario dé play.
+                self.restored_unloaded = true;
+                self.apply_saved_position(load_playback_position());
             }
         }
 
@@ -316,11 +332,14 @@ impl AppState {
         self.active_queue = queue;
         self.current_song_index = Some(valid_index as usize);
         self.current_time = 0.0;
+        self.pending_resume = None;
+        self.restored_unloaded = false;
 
         let _ = self.audio.play(&song.path);
         self.is_playing = true;
 
         self.persist();
+        self.save_position();
         self.notify_mpris();
     }
 
@@ -400,6 +419,14 @@ impl AppState {
         }
     }
 
+    /// Play o pausa explícitos (MPRIS, teclas multimedia): pasan por la misma lógica que el botón, de modo que
+    /// una canción restaurada al arrancar se carga antes de sonar y la posición guardada se aplica.
+    pub fn set_playing(&mut self, play: bool) {
+        if play != self.is_playing {
+            self.toggle_play_pause();
+        }
+    }
+
     pub fn toggle_play_pause(&mut self) {
         if self.current_song_index.is_none() {
             if !self.active_queue.is_empty() {
@@ -416,11 +443,14 @@ impl AppState {
         if self.is_playing {
             let _ = self.audio.pause();
             self.is_playing = false;
+            self.save_position();
         } else {
             if let Some(song) = self.current_song().cloned() {
                 let pos = self.audio.position_secs();
                 if pos == 0 {
                     let _ = self.audio.play(&song.path);
+                    // Ya se cargó: si hay una posición pendiente, `tick` la aplica en cuanto el reproductor responda.
+                    self.restored_unloaded = false;
                 } else {
                     let _ = self.audio.resume();
                 }
@@ -476,6 +506,11 @@ impl AppState {
     pub fn seek_commit(&mut self, new_secs: f64) {
         self.is_dragging_seek = false;
         self.current_time = new_secs;
+        if self.restored_unloaded {
+            // El reproductor aún no cargó el archivo: el punto elegido se aplica al dar play.
+            self.pending_resume = Some(new_secs);
+            return;
+        }
         self.seek_guard.on_seek(new_secs, Instant::now());
         let _ = self.audio.seek(new_secs);
     }
@@ -604,6 +639,57 @@ impl AppState {
         }
     }
 
+    /// Aplica la posición guardada si es de la canción actual: queda en ese punto (en pausa) y pendiente
+    /// de cargarse al dar play. En los últimos segundos de la canción se descarta.
+    pub fn apply_saved_position(&mut self, saved: Option<PlaybackPosition>) {
+        let Some(saved) = saved else { return };
+        let Some(song) = self.current_song() else { return };
+        if song.path != saved.path {
+            return;
+        }
+        let position = restore_position(saved.secs, song.duration_secs);
+        if position > 0.0 {
+            self.current_time = position;
+            self.pending_resume = Some(position);
+        }
+    }
+
+    /// Canción actual y segundo en que va, para guardarlos.
+    pub fn position_snapshot(&self) -> Option<PlaybackPosition> {
+        self.current_song().map(|song| PlaybackPosition { path: song.path.clone(), secs: self.current_time })
+    }
+
+    /// Las corridas de desarrollo no tienen ruta de ajustes y nunca tocan el estado real.
+    pub fn position_saving_enabled(&self) -> bool {
+        self.settings_path.is_some()
+    }
+
+    /// Guarda la posición ahora (al pausar, al cambiar de canción y al cerrar).
+    pub fn save_position(&mut self) {
+        if !self.position_saving_enabled() {
+            return;
+        }
+        let Some(position) = self.position_snapshot() else { return };
+        match save_playback_position(&position) {
+            Ok(()) => self.last_saved_position = Some(position.secs),
+            Err(e) => eprintln!("[aviso] No se pudo guardar la posición: {e}"),
+        }
+        self.last_position_write = Instant::now();
+    }
+
+    /// Guardado de respaldo mientras suena: cada 30 s y solo si la posición se movió, para no escribir de más.
+    fn save_position_if_due(&mut self) {
+        const INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+        if self.last_position_write.elapsed() < INTERVAL || !self.position_saving_enabled() {
+            return;
+        }
+        if position_moved(self.last_saved_position, self.current_time) {
+            self.save_position();
+        } else {
+            self.last_position_write = Instant::now();
+        }
+    }
+
     pub fn rescan_library(&mut self) {
         self.loading = true;
         self.set_songs(scan_and_cache(&self.settings.music_folders));
@@ -680,6 +766,14 @@ impl AppState {
             return;
         }
 
+        if let Some(secs) = self.pending_resume {
+            if !self.restored_unloaded && self.audio.try_position_secs().is_some() {
+                self.pending_resume = None;
+                self.seek_commit(secs);
+            }
+        }
+        self.save_position_if_due();
+
         let reported = self.audio.try_position_secs().unwrap_or(self.current_time);
         let pos = self.seek_guard.resolve(reported, Instant::now());
         self.current_time = pos;
@@ -751,5 +845,92 @@ mod tests {
         s.observe_stats_at(t0 + Duration::from_secs(30), E0 + 30_000);
         s.stats.finish_at(t0 + Duration::from_secs(30), E0 + 30_000);
         assert_eq!(plays(&s), 0);
+    }
+
+    fn saved(path: &str, secs: f64) -> Option<PlaybackPosition> {
+        Some(PlaybackPosition { path: path.into(), secs })
+    }
+
+    #[test]
+    fn al_restaurar_la_posicion_la_cancion_queda_en_ese_punto_y_pendiente_de_cargar() {
+        let mut s = state();
+        s.apply_saved_position(saved("/m/restaurada.mp3", 61.5));
+        assert_eq!(s.current_time, 61.5, "la barra y el tiempo muestran lo guardado");
+        assert_eq!(s.pending_resume, Some(61.5));
+        assert!(!s.is_playing, "queda en pausa");
+    }
+
+    #[test]
+    fn una_posicion_de_otra_cancion_o_sin_posicion_no_se_aplica() {
+        let mut s = state();
+        s.apply_saved_position(saved("/m/otra.mp3", 61.5));
+        assert_eq!((s.current_time, s.pending_resume), (0.0, None));
+        s.apply_saved_position(None);
+        assert_eq!((s.current_time, s.pending_resume), (0.0, None));
+    }
+
+    #[test]
+    fn una_posicion_en_los_ultimos_segundos_se_descarta() {
+        let mut s = state();
+        s.apply_saved_position(saved("/m/restaurada.mp3", 199.0));
+        assert_eq!((s.current_time, s.pending_resume), (0.0, None));
+    }
+
+    #[test]
+    fn mover_la_barra_antes_de_dar_play_reemplaza_la_posicion_guardada() {
+        let mut s = state();
+        s.apply_saved_position(saved("/m/restaurada.mp3", 61.5));
+        s.restored_unloaded = true; // como tras `init`: la cola se restauró sin sonar
+        s.seek_commit(120.0);
+        assert_eq!(s.current_time, 120.0);
+        assert_eq!(s.pending_resume, Some(120.0), "el reproductor aún no cargó el archivo");
+    }
+
+    #[test]
+    fn la_posicion_a_guardar_es_la_de_la_cancion_actual() {
+        let mut s = state();
+        s.current_time = 33.0;
+        assert_eq!(s.position_snapshot(), saved("/m/restaurada.mp3", 33.0));
+        s.current_song_index = None;
+        assert_eq!(s.position_snapshot(), None);
+    }
+
+    #[test]
+    fn en_corridas_de_desarrollo_la_posicion_nunca_se_escribe() {
+        let mut s = state(); // sin ruta de ajustes = corrida de desarrollo
+        s.current_time = 33.0;
+        assert!(!s.position_saving_enabled());
+        s.save_position();
+        assert_eq!(s.last_saved_position, None, "no se registró ningún guardado");
+    }
+
+    #[test]
+    fn play_por_mpris_con_la_cancion_restaurada_la_carga_y_conserva_la_posicion_pendiente() {
+        let mut s = state();
+        s.apply_saved_position(saved("/m/restaurada.mp3", 61.5));
+        s.restored_unloaded = true;
+        s.set_playing(true);
+        assert!(s.is_playing);
+        assert!(!s.restored_unloaded, "ya se cargó en el reproductor");
+        assert_eq!(s.pending_resume, Some(61.5), "la posición se aplica cuando el reproductor responda");
+    }
+
+    #[test]
+    fn play_cuando_ya_suena_o_pause_cuando_ya_esta_en_pausa_no_cambian_nada() {
+        let mut s = state();
+        s.is_playing = true;
+        s.set_playing(true);
+        assert!(s.is_playing, "no debe pausar");
+        s.is_playing = false;
+        s.set_playing(false);
+        assert!(!s.is_playing, "no debe reanudar");
+    }
+
+    #[test]
+    fn pause_por_mpris_pausa_si_suena() {
+        let mut s = state();
+        s.is_playing = true;
+        s.set_playing(false);
+        assert!(!s.is_playing);
     }
 }

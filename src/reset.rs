@@ -1,6 +1,6 @@
 //! Restablecer de fábrica: borra ajustes, tamaño de ventana, estado de reproducción y caché de biblioteca.
 //! No toca la base de estadísticas ni los archivos de música.
-use crate::paths::{get_covers_dir, get_library_cache_path, get_playback_state_path};
+use crate::paths::{get_covers_dir, get_library_cache_path, get_playback_position_path, get_playback_state_path};
 use std::path::{Path, PathBuf};
 
 pub struct ResetReport {
@@ -11,7 +11,13 @@ pub struct ResetReport {
 /// Archivos y carpetas que se borran. `settings_file` y `window_file` se reciben para poder probarlo.
 pub fn factory_paths(settings_file: &Path, window_file: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     (
-        vec![settings_file.to_path_buf(), window_file.to_path_buf(), get_playback_state_path(), get_library_cache_path()],
+        vec![
+            settings_file.to_path_buf(),
+            window_file.to_path_buf(),
+            get_playback_state_path(),
+            get_playback_position_path(),
+            get_library_cache_path(),
+        ],
         vec![get_covers_dir()],
     )
 }
@@ -84,7 +90,7 @@ mod tests {
     fn la_lista_de_fabrica_son_exactamente_los_archivos_del_spec() {
         let (files, dirs) = factory_paths(Path::new("/c/settings.json"), Path::new("/c/window.json"));
         let names: Vec<String> = files.iter().filter_map(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).collect();
-        assert_eq!(names, ["settings.json", "window.json", "playback_state.json", "library_cache.json"]);
+        assert_eq!(names, ["settings.json", "window.json", "playback_state.json", "playback_position.json", "library_cache.json"]);
         assert_eq!(dirs.len(), 1);
         assert_eq!(dirs[0].file_name().unwrap().to_string_lossy(), "covers");
         assert!(files.iter().chain(dirs.iter()).all(|p| !p.to_string_lossy().contains("stats.db")));
