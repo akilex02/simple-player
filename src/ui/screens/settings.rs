@@ -123,13 +123,23 @@ fn section<R>(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egu
     .inner
 }
 
+/// Ancho disponible para el texto de una fila: lo que queda tras reservar sitio a los controles de la derecha.
+pub fn text_max_width(total: f32, controls_w: f32) -> f32 {
+    (total - controls_w - 16.0).max(160.0)
+}
+
 /// Fila con etiqueta y descripción a la izquierda y el control a la derecha.
 fn row(ui: &mut egui::Ui, label: &str, description: &str, add_control: impl FnOnce(&mut egui::Ui)) {
+    row_with(ui, label, description, 200.0, add_control);
+}
+
+/// Como `row`, reservando `controls_w` puntos para los controles (más si son varios).
+fn row_with(ui: &mut egui::Ui, label: &str, description: &str, controls_w: f32, add_control: impl FnOnce(&mut egui::Ui)) {
     let total = ui.available_width();
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            // El texto se ajusta en varias líneas para no pisar el control de la derecha.
-            ui.set_max_width((total - 200.0).max(160.0));
+            // El texto se ajusta en varias líneas para no pisar los controles de la derecha.
+            ui.set_max_width(text_max_width(total, controls_w));
             ui.label(RichText::new(label).font(theme::bold(text::BASE)));
             ui.label(RichText::new(description).size(text::SM).color(theme::TEXT_MUTED));
         });
@@ -309,7 +319,9 @@ fn confirm_row(
     action_label: &str,
     on_confirm: impl FnOnce(),
 ) {
-    row(ui, label, description, |ui| {
+    // Confirmando hay tres controles (¿Seguro?, Sí…, Cancelar): se reserva más sitio.
+    let controls_w = if view.confirm == Some(which) { 400.0 } else { 200.0 };
+    row_with(ui, label, description, controls_w, |ui| {
         if view.confirm == Some(which) {
             if PillButton::new("Cancelar", PillKind::Ghost).show(ui).clicked() {
                 view.confirm = None;
@@ -502,5 +514,12 @@ mod tests {
     fn el_nombre_sugerido_lleva_la_fecha() {
         let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 3).unwrap();
         assert_eq!(export_file_name(date), "simple-player-historial-2026-10-03.json");
+    }
+
+    #[test]
+    fn el_texto_de_una_fila_deja_sitio_a_los_controles() {
+        assert_eq!(text_max_width(1000.0, 200.0), 784.0);
+        assert_eq!(text_max_width(1000.0, 400.0), 584.0, "con más controles el texto se parte antes");
+        assert_eq!(text_max_width(300.0, 400.0), 160.0, "nunca menos que el mínimo legible");
     }
 }
