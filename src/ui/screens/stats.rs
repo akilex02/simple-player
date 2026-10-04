@@ -142,16 +142,47 @@ fn habits_card(ui: &mut egui::Ui, summary: &StatsSummary) {
         ui.set_width(ui.available_width());
         ui.label(RichText::new("HÁBITOS").font(theme::deco(text::LG)).color(theme::accent(ui.ctx())));
         ui.add_space(space::MD);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(space::XXL, space::LG);
-            for (label, value) in metrics {
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(label).size(text::SM).color(theme::TEXT_MUTED));
-                    ui.label(RichText::new(value).font(theme::bold(text::MD)));
-                });
-            }
-        });
+
+        // Cuadrícula: tantas columnas como quepan (con un ancho mínimo legible), en filas del mismo ancho.
+        let width = ui.available_width();
+        let columns = habit_columns(width);
+        let cell_w = (width - (columns - 1) as f32 * HABIT_GAP) / columns as f32;
+        let mut items = metrics.into_iter();
+        for in_row in habit_rows(8, columns) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = HABIT_GAP;
+                for (label, value) in items.by_ref().take(in_row) {
+                    ui.allocate_ui_with_layout(egui::vec2(cell_w, 44.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                        // Sin un tamaño mínimo la fila avanzaría por lo que ocupa el texto y las columnas no alinearían.
+                        ui.set_min_size(egui::vec2(cell_w, 44.0));
+                        ui.label(RichText::new(label).size(text::SM).color(theme::TEXT_MUTED));
+                        ui.label(RichText::new(value).font(theme::bold(text::MD)));
+                    });
+                }
+            });
+            ui.add_space(space::SM);
+        }
     });
+}
+
+const HABIT_GAP: f32 = 32.0;
+const HABIT_MIN_W: f32 = 150.0;
+
+/// Cuántas métricas caben por fila (1 a 4) con un ancho mínimo por columna.
+fn habit_columns(width: f32) -> usize {
+    (((width + HABIT_GAP) / (HABIT_MIN_W + HABIT_GAP)).floor() as usize).clamp(1, 4)
+}
+
+/// Cuántas métricas lleva cada fila al repartir `total` en `columns` columnas.
+fn habit_rows(total: usize, columns: usize) -> Vec<usize> {
+    let mut rows = Vec::new();
+    let mut left = total;
+    while left > 0 {
+        let n = left.min(columns.max(1));
+        rows.push(n);
+        left -= n;
+    }
+    rows
 }
 
 fn tops(ui: &mut egui::Ui, summary: &StatsSummary, songs: &[Song], textures: &mut TextureCache) {
@@ -231,4 +262,27 @@ fn top_card(
             painter.rect_filled(egui::Rect::from_min_size(egui::pos2(rect.left() + 4.0, bar_y), egui::vec2(filled, 3.0)), 1.5, accent);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn las_columnas_de_habitos_dependen_del_ancho_y_nunca_pasan_de_cuatro() {
+        assert_eq!(habit_columns(1400.0), 4);
+        assert_eq!(habit_columns(700.0), 4);
+        assert_eq!(habit_columns(600.0), 3);
+        assert_eq!(habit_columns(450.0), 2);
+        assert_eq!(habit_columns(200.0), 1);
+        assert_eq!(habit_columns(0.0), 1, "nunca cero columnas");
+    }
+
+    #[test]
+    fn las_metricas_se_reparten_en_filas_del_mismo_ancho() {
+        assert_eq!(habit_rows(8, 4), vec![4, 4]);
+        assert_eq!(habit_rows(8, 3), vec![3, 3, 2]);
+        assert_eq!(habit_rows(8, 1), vec![1; 8]);
+        assert!(habit_rows(0, 4).is_empty());
+    }
 }
