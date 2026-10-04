@@ -7,6 +7,7 @@ use crate::ui::format_time;
 use crate::ui::textures::TextureCache;
 use crate::ui::widgets::cover::paint_cover;
 use crate::ui::widgets::empty_state::empty_state;
+use crate::ui::widgets::glass::{paint_glass, GlassKind};
 use crate::ui::widgets::pill_button::{PillButton, PillKind};
 use eframe::egui::{self, Color32, FontId, RichText};
 
@@ -17,6 +18,8 @@ const HEADER_H: f32 = 28.0;
 /// Alto de la mini barra fija y su carátula.
 const MINI_H: f32 = 44.0;
 const MINI_COVER: f32 = 32.0;
+/// Margen interno de la mini barra dentro de la tarjeta fija.
+const MINI_PAD: f32 = 14.0;
 /// Puntos de scroll tras salir el hero en los que la mini barra termina de aparecer.
 const MINI_FADE: f32 = 24.0;
 
@@ -63,14 +66,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
     if let Some(offset) = state.dev_scroll.take() {
         scroll = scroll.vertical_scroll_offset(offset);
     }
-    let mut pinned = false;
-    let mut scroll_past_hero = 0.0;
-    let mut viewport_top = 0.0;
-    let mut content_x = ui.available_rect_before_wrap().x_range();
-    let scroll_out = scroll.show_viewport(ui, |ui, viewport| {
+    scroll.show_viewport(ui, |ui, viewport| {
         let origin = ui.max_rect().top();
         // Dónde está en pantalla el borde superior de lo visible (donde se fija la barra).
-        viewport_top = origin + viewport.min.y;
+        let viewport_top = origin + viewport.min.y;
         action = hero::show(ui, textures, &info, compact);
         ui.add_space(space::LG);
         let hero_end = ui.cursor().top() - origin;
@@ -81,14 +80,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
         if !pinned_now {
             header(ui, state, &cols, header_rect);
         }
-        content_x = header_rect.x_range();
 
         ui.spacing_mut().item_spacing.y = ROW_GAP;
         let pitch = ROW_H + ROW_GAP;
         let rows_origin = ui.cursor().top();
         let layout = list_layout(viewport.min.y, viewport.height(), rows_origin - origin, hero_end, pitch, indices.len());
-        pinned = layout.pinned;
-        scroll_past_hero = viewport.min.y - hero_end;
 
         // Se reserva el alto de todas las filas (para que el scroll mida bien) y solo se dibujan las visibles.
         let (rows_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), (indices.len() as f32 * pitch - ROW_GAP).max(0.0)), egui::Sense::hover());
@@ -98,6 +94,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
         );
         let mut rows_ui = ui.new_child(egui::UiBuilder::new().max_rect(draw_rect));
         rows_ui.spacing_mut().item_spacing.y = ROW_GAP;
+        if layout.pinned {
+            // Las filas no se dibujan debajo de la tarjeta fija: así el vidrio se ve igual que el del hero.
+            let clip = rows_ui.clip_rect();
+            let below = viewport_top + MINI_H + HEADER_H + ROW_GAP;
+            rows_ui.set_clip_rect(egui::Rect::from_min_max(egui::pos2(clip.left(), clip.top().max(below)), clip.max));
+        }
         for i in layout.first_row..layout.last_row {
             let song = &state.songs[indices[i]];
             let (rect, response) = rows_ui.allocate_exact_size(egui::vec2(rows_ui.available_width(), ROW_H), crate::ui::widgets::click_without_focus());
@@ -107,25 +109,25 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
                 clicked = Some(i);
             }
         }
-    });
 
-    if pinned {
-        let area = scroll_out.inner_rect;
-        let overlay = egui::Rect::from_min_size(egui::pos2(area.left(), viewport_top), egui::vec2(area.width(), MINI_H + HEADER_H));
-        let mini = egui::Rect::from_min_size(egui::pos2(content_x.min, overlay.top()), egui::vec2(content_x.max - content_x.min, MINI_H));
-        let header_rect = egui::Rect::from_min_size(egui::pos2(content_x.min, overlay.top() + MINI_H), egui::vec2(content_x.max - content_x.min, HEADER_H));
-        // Fondo que tapa las filas que pasan por debajo; además absorbe los clics.
-        // Opaco (con 250 egui deja ver un 2 % de las filas) y 3 px más arriba: el scroll recorta con ese margen.
-        let backdrop = egui::Rect::from_min_max(egui::pos2(overlay.left(), overlay.top() - 3.0), overlay.max);
-        ui.painter_at(backdrop).rect_filled(backdrop, 0.0, theme::BG_BASE);
-        ui.interact(overlay, egui::Id::new("songs_pinned_overlay"), egui::Sense::click_and_drag());
-        let fade = (scroll_past_hero / MINI_FADE).clamp(0.0, 1.0);
-        let mini_action = mini_bar(ui, textures, &info, mini, fade);
-        if mini_action != HeroAction::None {
-            action = mini_action;
+        // Dentro del contenido del scroll: así la barra de desplazamiento se pinta por encima de la tarjeta.
+        if layout.pinned {
+            let card = egui::Rect::from_min_size(egui::pos2(rows_rect.left(), viewport_top), egui::vec2(rows_rect.width(), MINI_H + HEADER_H));
+            let mut pinned_ui = ui.new_child(egui::UiBuilder::new().max_rect(card));
+            // Absorbe los clics para que no lleguen a las filas que quedan debajo.
+            pinned_ui.interact(card, egui::Id::new("songs_pinned_card"), egui::Sense::click_and_drag());
+            paint_glass(pinned_ui.painter(), card, GlassKind::Standard, radius::LG, 0.0);
+            pinned_ui.painter().rect_filled(card, radius::LG, with_alpha(accent, 34));
+            let mini = egui::Rect::from_min_size(card.min + egui::vec2(MINI_PAD, 0.0), egui::vec2(card.width() - 2.0 * MINI_PAD, MINI_H));
+            let fade = ((viewport.min.y - hero_end) / MINI_FADE).clamp(0.0, 1.0);
+            let mini_action = mini_bar(&mut pinned_ui, textures, &info, mini, fade);
+            if mini_action != HeroAction::None {
+                action = mini_action;
+            }
+            let header_rect = egui::Rect::from_min_size(egui::pos2(card.left(), card.top() + MINI_H), egui::vec2(card.width(), HEADER_H));
+            header(&mut pinned_ui, state, &cols, header_rect);
         }
-        header(ui, state, &cols, header_rect);
-    }
+    });
 
     if let Some(i) = clicked {
         let song = state.songs[indices[i]].clone();
