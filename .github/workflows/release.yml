@@ -1,0 +1,173 @@
+name: Release
+
+on:
+  push:
+    branches: [nueva-version]
+    paths-ignore: ['docs/**', '**/*.md', '.claude/**']
+  workflow_dispatch:
+    inputs:
+      keep_releases:
+        description: "Cuántos releases dev conservar (los más nuevos)"
+        required: false
+        default: "10"
+
+concurrency:
+  group: release-nueva-version
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    outputs:
+      app_version: ${{ steps.meta.outputs.app_version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versión y tag
+        id: meta
+        run: |
+          set -euo pipefail
+          base="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
+          echo "app_version=${base}-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${base}-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Dependencias del sistema
+        run: bash scripts/ci/install-deps.sh build
+
+      - name: Rust estable
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Pruebas
+        run: cargo test --locked
+
+      - name: Compilar
+        run: cargo build --release --locked
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simple-player-bin
+          path: target/release/simple-player
+          if-no-files-found: error
+
+  package:
+    needs: build
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: true
+      matrix:
+        variant: [full, light]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias del sistema
+        if: matrix.variant == 'full'
+        run: bash scripts/ci/install-deps.sh package
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: simple-player-bin
+          path: bin
+
+      - name: Empaquetar
+        env:
+          VARIANT: ${{ matrix.variant }}
+          APP_VERSION: ${{ needs.build.outputs.app_version }}
+        run: |
+          set -euo pipefail
+          chmod +x bin/simple-player
+          bash scripts/build-appimage.sh "$VARIANT" --binary bin/simple-player
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage-${{ matrix.variant }}
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  publish:
+    needs: [build, package]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.build.outputs.tag }}
+      APP_VERSION: ${{ needs.build.outputs.app_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: appimage-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Archivos del release
+        run: |
+          set -euo pipefail
+          mkdir release
+          mv artifacts/*.AppImage release/
+          (cd release && sha256sum ./*.AppImage | sed 's|\./||' > SHA256SUMS)
+          ls -la release
+
+      - name: Release anterior
+        id: prev
+        run: |
+          set -euo pipefail
+          prev_tag="$(gh release list --limit 200 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName' | grep -E '^v.+-dev\.[0-9]+$' | head -n1 || true)"
+          prev_sha=""
+          if [ -n "$prev_tag" ] && git rev-parse -q --verify "refs/tags/${prev_tag}^{commit}" >/dev/null; then
+            prev_sha="$(git rev-list -n1 "$prev_tag")"
+          fi
+          echo "sha=${prev_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Notas del release
+        env:
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          PREV_SHA: ${{ steps.prev.outputs.sha }}
+          VERSION: ${{ needs.build.outputs.app_version }}
+          ASSETS_DIR: release
+        run: bash scripts/release-notes.sh > notes.md
+
+      - name: Crear el release en borrador y subir los archivos
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --draft --prerelease --latest=false --target "$GITHUB_SHA" \
+            --title "Simple Player ${TAG}" --notes-file notes.md release/*
+
+      - name: Publicar
+        run: gh release edit "$TAG" --draft=false
+
+      - name: Borrar el borrador si algo falló
+        if: failure()
+        run: gh release delete "$TAG" --yes --cleanup-tag || true
+
+      - name: Podar los releases dev antiguos
+        env:
+          KEEP: ${{ inputs.keep_releases || '10' }}
+        run: |
+          set -euo pipefail
+          gh release list --limit 200 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName' \
+            | bash scripts/ci/select-prune.sh \
+            | while read -r old; do
+                echo "Borrando $old"
+                gh release delete "$old" --yes --cleanup-tag
+              done
