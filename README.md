@@ -25,6 +25,7 @@ Un reproductor de música local para Linux, rápido y con estética "liquid-glas
 | `Alt+←` / `Alt+→` | Canción anterior / siguiente |
 | `M` | Silenciar |
 | `Q` | Mostrar la cola |
+| `Ctrl+Q` | Cerrar la aplicación |
 | `F` | Pantalla completa "Ahora suena" |
 | `L` | Letra |
 | `/` o `Ctrl+K` | Buscar |

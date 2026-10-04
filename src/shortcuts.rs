@@ -21,6 +21,11 @@ pub fn volume_after_scroll(volume: f64, scroll_y: f32) -> f64 {
     step_volume(volume, if scroll_y > 0.0 { VOLUME_STEP } else { -VOLUME_STEP })
 }
 
+/// ¿Es Ctrl+Q (y solo eso)? Cierra la app, también con el foco en un campo de texto.
+pub fn is_quit(modifiers: &egui::Modifiers, q_pressed: bool) -> bool {
+    q_pressed && modifiers.command && !modifiers.alt && !modifiers.shift
+}
+
 /// Cambio de un slider enfocado con las flechas (`shift` = paso grande).
 pub fn adjust_with_keys(value: f32, left: bool, right: bool, shift: bool) -> f32 {
     let step = if shift { 0.1 } else { 0.02 };
@@ -102,5 +107,16 @@ mod tests {
     fn sin_movimiento_de_rueda_el_volumen_no_cambia() {
         assert_eq!(volume_after_scroll(0.37, 0.0), 0.37);
         assert_eq!(volume_after_scroll(0.37, f32::NAN), 0.37);
+    }
+
+    #[test]
+    fn ctrl_q_cierra_y_ninguna_otra_combinacion_lo_hace() {
+        let none = egui::Modifiers::NONE;
+        let ctrl = egui::Modifiers::COMMAND;
+        assert!(is_quit(&ctrl, true));
+        assert!(!is_quit(&none, true), "Q solo abre la cola");
+        assert!(!is_quit(&ctrl, false), "Ctrl sin Q");
+        assert!(!is_quit(&egui::Modifiers { shift: true, ..ctrl }, true), "Ctrl+Shift+Q no cierra");
+        assert!(!is_quit(&egui::Modifiers { alt: true, ..ctrl }, true), "Ctrl+Alt+Q no cierra");
     }
 }

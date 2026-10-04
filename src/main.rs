@@ -285,7 +285,11 @@ impl App {
         let (duration, now_secs) = (self.state.current_song().map(|s| s.duration_secs as f64).unwrap_or(0.0), self.state.current_time);
         let mut seek_by: Option<f64> = None;
         let mut volume_by: Option<f64> = None;
+        let mut quit = false;
         ctx.input(|i| {
+            if shortcuts::is_quit(&i.modifiers, i.key_pressed(egui::Key::Q)) {
+                quit = true;
+            }
             let plain = !i.modifiers.alt && !i.modifiers.command && !i.modifiers.shift;
             if plain && !editing_text && !widget_focused {
                 if i.key_pressed(egui::Key::ArrowLeft) { seek_by = Some(-shortcuts::SEEK_STEP_SECS); }
@@ -324,6 +328,10 @@ impl App {
                 self.viz_latency_secs += 0.010;
             }
         });
+        if quit {
+            // Por el cierre normal de la ventana: así `on_exit` guarda la posición, el historial y el tamaño.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         if let Some(delta) = seek_by {
             self.state.seek_commit(shortcuts::seek_target(now_secs, delta, duration));
         }
