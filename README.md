@@ -37,9 +37,24 @@ Un reproductor de música local para Linux, rápido y con estética "liquid-glas
 
 ## Instalación (Linux)
 
-### Opción 1: AppImage
-1. Ve a [Releases](../../releases) y descarga el `.AppImage`.
-2. Dale permisos de ejecución: `chmod +x Simple_Player-*.AppImage`
+### Opción 1: AppImage (descargas automáticas)
+
+Cada cambio de código en la rama `nueva-version` publica un *pre-release* en [Releases](../../releases) con su resumen de cambios y dos archivos:
+
+| Archivo | Para quién |
+|---|---|
+| `Simple_Player-…-x86_64.AppImage` | **Autocontenido:** funciona en casi cualquier distro; incluye GStreamer y sus bibliotecas (pesa más). |
+| `Simple_Player-…-x86_64-light.AppImage` | **Ligero:** usa las bibliotecas del sistema (Arch/CachyOS o distros con GStreamer instalado). |
+
+```bash
+chmod +x Simple_Player-*.AppImage
+./Simple_Player-*.AppImage
+sha256sum -c SHA256SUMS --ignore-missing   # opcional: verificar la descarga
+```
+
+Para que Plasma muestre los controles multimedia en la miniatura de la barra de tareas, registra el AppImage en el menú (por ejemplo con AppImageLauncher).
+
+> La rama `master` conserva la versión anterior (Tauri) como referencia; los releases nuevos son de la versión nativa.
 
 ### Opción 2: Arch Linux / CachyOS
 ```bash
@@ -103,6 +118,7 @@ Todo es local; la app no usa la red. En Configuración → Acerca de puedes abri
 cargo test                      # pruebas (lógica pura: sin audio ni GPU)
 cargo run --release             # ejecutar
 cargo run --release -- --gallery   # galería del sistema de diseño
+bash scripts/tests/run-all.sh   # pruebas de los scripts de release y del workflow
 ```
 
 Opciones útiles (no escriben en tu base de estadísticas real):
