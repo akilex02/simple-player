@@ -2,6 +2,13 @@ use super::gradient::radial_glow_mesh;
 use crate::theme::{self, with_alpha};
 use eframe::egui::{self, Color32};
 
+/// Radio y opacidad del resplandor del botón principal según el hover (0..1): discreto, para que no
+/// se desborde sobre el texto cercano.
+fn primary_glow(width: f32, hover: f32) -> (f32, u8) {
+    let hover = hover.clamp(0.0, 1.0);
+    (width * (0.2 + 0.22 * hover), (hover * 45.0) as u8)
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum PillKind {
     /// Acción principal (Reproducir): relleno lima.
@@ -54,7 +61,8 @@ impl<'a> PillButton<'a> {
         match self.kind {
             PillKind::Primary => {
                 if hover > 0.0 {
-                    painter.add(radial_glow_mesh(rect.center(), rect.width() * 0.7, with_alpha(theme::ACCENT_LIME, (hover * 90.0) as u8), 32));
+                    let (radius, alpha) = primary_glow(rect.width(), hover);
+                    painter.add(radial_glow_mesh(rect.center(), radius, with_alpha(theme::ACCENT_LIME, alpha), 32));
                 }
                 painter.rect_filled(rect, rounding, theme::lerp_color(theme::ACCENT_LIME, Color32::WHITE, 0.35 * hover));
             }
@@ -83,5 +91,21 @@ impl<'a> PillButton<'a> {
             painter.rect_stroke(rect.expand(3.0), rounding + 3.0, egui::Stroke::new(2.0_f32, theme::ACCENT_PINK));
         }
         response
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn el_resplandor_es_discreto_y_crece_con_el_hover() {
+        let (r0, a0) = primary_glow(160.0, 0.0);
+        let (r1, a1) = primary_glow(160.0, 1.0);
+        assert_eq!(a0, 0, "sin hover no hay brillo");
+        assert!(r0 <= r1 && a0 <= a1);
+        assert!(r1 <= 160.0 * 0.45, "el radio no pasa del 45 % del ancho: {r1}");
+        assert!(a1 <= 50, "la intensidad máxima se mantiene baja: {a1}");
+        assert!(a1 > 0 && r1 > 160.0 * 0.5 * 0.5, "pero se nota");
     }
 }
