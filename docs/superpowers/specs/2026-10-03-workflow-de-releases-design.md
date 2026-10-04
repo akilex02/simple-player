@@ -151,13 +151,15 @@ Estructura:
 - Sin acciones de terceros para publicar: se usa la CLI `gh` del runner. Acciones usadas: `actions/checkout`, `actions/cache`, `actions/upload-artifact` y `actions/download-artifact` (oficiales de GitHub, fijadas a su versión mayor).
 - Las herramientas descargadas para el AppImage se verifican por hash (§5.2).
 - Las notas se generan a partir de textos de commits: se escapan para evitar Markdown/menciones inesperadas (§7). Nada de entradas del evento se interpola directamente en comandos de shell; se pasan por variables de entorno.
-- Depende de que **Actions esté habilitado** en `akilex02/simple-player` y de que la política de permisos del repositorio no impida que el workflow declare `contents: write` (no se puede consultar sin permisos de administrador; se comprueba con el primer run).
+- **Permisos del usuario:** `budja8` tiene rol **write** en `akilex02/simple-player` (no es administrador). Con eso puede subir el workflow (su token de `gh` tiene el permiso `workflow`), lanzar ejecuciones, y crear y borrar releases y tags. **No puede** ver ni cambiar los ajustes de Actions del repositorio.
+- El workflow depende de dos ajustes que solo controla el propietario (`akilex02`): que **Actions esté habilitado** en el repositorio y que la política de permisos de workflows no impida que declare `contents: write`. No se pueden consultar sin ser administrador; se comprueban con el primer run (§9). Si fallan, hay que pedirle al propietario que los active (§10).
 
 ---
 
 ## 9. Verificación
 
 - **Antes del primer push:** pruebas de `release-notes.sh` en local (repositorio temporal con y sin release anterior, con merges, con `@` y `<` en los títulos, más de 40 commits y sin commits nuevos); `bash -n` y `shellcheck` (si está instalado) sobre los scripts; el YAML se valida con un parser; el script `build-appimage.sh light` se prueba localmente.
+- **Comprobación previa de Actions (sin riesgo):** un primer push con un workflow mínimo que solo imprime un mensaje (y, en un job aparte, intenta crear y borrar un release de prueba `v0.0.0-ci-check` en borrador) confirma que Actions está habilitado y que `contents: write` funciona, antes de depender del flujo completo. Si falla, se le pide el cambio al propietario.
 - **Primer push:** se sigue la ejecución con `gh run watch` y se leen los logs de cada job; se itera hasta que el release salga completo. Se comprueba: asset names, `SHA256SUMS`, notas, que el release sea pre-release y que el release antiguo siga siendo "Latest".
 - **Descarga real:** se baja cada AppImage y se prueba (el ligero en esta máquina; el autocontenido con `--appimage-extract` y `ldd`, y abriéndolo con extracción automática). La prueba en una distro distinta la hace el usuario.
 - **Segundo push:** se verifica que las notas muestran solo los commits nuevos y que la limpieza respeta el límite (se prueba con `KEEP_RELEASES` bajo en un release de prueba antes de dejarlo en 10).
@@ -171,6 +173,7 @@ Estructura:
 - **Tamaño y tiempo:** el autocontenido pesa ~100–150 MB y el empaquetado tarda más; con 10 releases conservados el repositorio ocupa ~2 GB de assets (dentro de los límites de GitHub para releases, pero no despreciable).
 - **Huecos en la numeración** `dev.N` cuando una ejecución falla.
 - **`master` y el botón manual:** puede que el botón "Run workflow" no aparezca (ver §3).
+- **Ajustes que solo puede cambiar el propietario:** si el primer run no arranca (Actions deshabilitado), o el job `publish` falla con "Resource not accessible by integration" (política de permisos de workflows en solo lectura), la solución no está en el código: `akilex02` debe habilitar Actions en *Settings → Actions → General*, y poner *Workflow permissions* en "Read and write permissions" (o permitir que el workflow solicite `contents: write`). El plan incluye un mensaje listo para pedírselo y un workflow mínimo de comprobación (`gh workflow run`) para detectarlo antes de depender del flujo completo.
 
 ---
 
@@ -190,6 +193,7 @@ Estructura:
 
 ## 12. Orden de implementación
 
+0. Comprobación previa de Actions y permisos con un workflow mínimo (§9); si falla, pedir el ajuste al propietario antes de continuar.
 1. `scripts/release-notes.sh` y sus pruebas (se verifica sin GitHub).
 2. `scripts/build-appimage.sh` con `full`/`light`, `--binary` y el archivo de herramientas con hash; prueba local del `light`.
 3. `.github/workflows/release.yml` (jobs `build`, `package`, `publish`) y validación del YAML.
