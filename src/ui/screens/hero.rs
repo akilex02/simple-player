@@ -46,11 +46,20 @@ fn max_glow_radius(center: egui::Pos2, rect: egui::Rect, corner: f32) -> f32 {
     nearest
 }
 
+/// ¿Se usa el encabezado compacto con este alto disponible? (se decide fuera del scroll de la lista)
+pub fn is_compact(available_height: f32) -> bool {
+    available_height < COMPACT_BELOW
+}
+
+/// Alto del encabezado en cada modo.
+pub fn height(compact: bool) -> f32 {
+    if compact { 164.0 } else { 196.0 }
+}
+
 /// Encabezado de la pantalla: carátula, título, resumen y acciones.
-pub fn show(ui: &mut egui::Ui, textures: &mut TextureCache, info: &HeroInfo) -> HeroAction {
+pub fn show(ui: &mut egui::Ui, textures: &mut TextureCache, info: &HeroInfo, compact: bool) -> HeroAction {
     let accent = theme::accent(ui.ctx());
-    let compact = ui.available_height() < COMPACT_BELOW;
-    let (height, cover_side) = if compact { (164.0, 112.0) } else { (196.0, 144.0) };
+    let (height, cover_side) = (height(compact), if compact { 112.0 } else { 144.0 });
     let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::hover());
     let painter = ui.painter();
     paint_glass(painter, rect, GlassKind::Standard, radius::XL, 0.0);

@@ -118,6 +118,8 @@ pub struct AppState {
     settings_path: Option<PathBuf>,
     /// `true` tras un restablecimiento de fábrica: al cerrar no se guarda el tamaño de la ventana.
     pub window_reset: bool,
+    /// Solo desarrollo (`--scroll N`): desplazamiento inicial de la lista de canciones.
+    pub dev_scroll: Option<f32>,
 
     pub active_tab: ActiveTab,
     pub selected_artist: Option<String>,
@@ -167,6 +169,7 @@ impl AppState {
             settings: Settings::default(),
             settings_path: None,
             window_reset: false,
+            dev_scroll: None,
             active_tab: ActiveTab::All,
             selected_artist: None,
             selected_album: None,

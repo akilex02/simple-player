@@ -21,6 +21,40 @@ pub fn column_widths(avail: f32) -> TableColumns {
     }
 }
 
+/// Qué dibujar de la lista de canciones dentro de un solo scroll (hero, encabezado y filas virtualizadas).
+#[derive(Debug, PartialEq)]
+pub struct ListLayout {
+    pub first_row: usize,
+    /// Exclusiva.
+    pub last_row: usize,
+    /// Alto vacío que sustituye a las filas no dibujadas antes de `first_row`.
+    pub space_above: f32,
+    /// Y el de las posteriores a `last_row`.
+    pub space_below: f32,
+    /// El hero ya salió de la vista: aparecen la mini barra y el encabezado fijos.
+    pub pinned: bool,
+}
+
+/// Todas las medidas están en coordenadas del contenido del scroll: `scroll_top` es el desplazamiento,
+/// `rows_top` donde empiezan las filas y `hero_end` donde termina el hero (con su separación).
+pub fn list_layout(scroll_top: f32, viewport_h: f32, rows_top: f32, hero_end: f32, row_pitch: f32, rows: usize) -> ListLayout {
+    let pinned = scroll_top >= hero_end;
+    let visible_bottom = scroll_top + viewport_h;
+    if rows == 0 || row_pitch <= 0.0 || visible_bottom <= rows_top {
+        return ListLayout { first_row: 0, last_row: 0, space_above: 0.0, space_below: rows as f32 * row_pitch.max(0.0), pinned };
+    }
+    let visible_top = scroll_top.max(rows_top);
+    let first_row = (((visible_top - rows_top) / row_pitch).floor() as usize).min(rows);
+    let last_row = (((visible_bottom - rows_top) / row_pitch).ceil() as usize).clamp(first_row, rows);
+    ListLayout {
+        first_row,
+        last_row,
+        space_above: first_row as f32 * row_pitch,
+        space_below: (rows - last_row) as f32 * row_pitch,
+        pinned,
+    }
+}
+
 /// Reparto de una grilla de tarjetas que se adapta al ancho disponible.
 #[derive(Debug, PartialEq)]
 pub struct GridLayout {
@@ -192,5 +226,55 @@ mod tests {
         let t = hero_text(HeroContext::Album { album: "", artist: "" }, 2, 120);
         assert_eq!(t, text("ÁLBUM", "Álbum desconocido", "Artista desconocido · 2 canciones · 2 min"));
         assert_eq!(hero_text(HeroContext::Artist(""), 2, 120).title, "Artista desconocido");
+    }
+
+    fn layout(scroll: f32) -> ListLayout {
+        // hero de 164 + 16 de separación, encabezado de 28 → las filas empiezan en 208; 100 filas de 56.
+        list_layout(scroll, 500.0, 208.0, 180.0, 56.0, 100)
+    }
+
+    #[test]
+    fn arriba_del_todo_se_ve_el_hero_y_las_primeras_filas() {
+        let l = layout(0.0);
+        assert!(!l.pinned);
+        assert_eq!(l.first_row, 0);
+        // la ventana llega a 500: quedan 292 para filas → 6 filas (5.2 redondeado hacia arriba).
+        assert_eq!(l.last_row, 6);
+        assert_eq!(l.space_above, 0.0);
+    }
+
+    #[test]
+    fn con_el_hero_fuera_de_vista_se_fija_la_barra_y_empiezan_las_filas_visibles() {
+        let l = layout(560.0);
+        assert!(l.pinned);
+        // fila superior visible: (560 - 208) / 56 = 6.28 → fila 6
+        assert_eq!(l.first_row, 6);
+        assert_eq!(l.space_above, 6.0 * 56.0);
+        assert!(l.last_row > l.first_row);
+    }
+
+    #[test]
+    fn se_fija_justo_cuando_el_hero_termina_de_salir() {
+        assert!(!layout(179.9).pinned);
+        assert!(layout(180.0).pinned);
+    }
+
+    #[test]
+    fn nunca_se_piden_filas_fuera_de_la_lista_ni_se_pierde_altura() {
+        for scroll in [0.0, 100.0, 1000.0, 5000.0, 5700.0, 9999.0] {
+            let l = layout(scroll);
+            assert!(l.first_row <= l.last_row && l.last_row <= 100, "{scroll}: {l:?}");
+            let total = l.space_above + (l.last_row - l.first_row) as f32 * 56.0 + l.space_below;
+            assert!((total - 100.0 * 56.0).abs() < 0.01, "{scroll}: {total}");
+        }
+    }
+
+    #[test]
+    fn sin_filas_o_con_el_hero_ocupando_toda_la_ventana_no_hay_filas_que_dibujar() {
+        let none = list_layout(0.0, 500.0, 208.0, 180.0, 56.0, 0);
+        assert_eq!((none.first_row, none.last_row, none.space_above, none.space_below), (0, 0, 0.0, 0.0));
+        let tall_hero = list_layout(0.0, 150.0, 208.0, 180.0, 56.0, 100);
+        assert_eq!((tall_hero.first_row, tall_hero.last_row), (0, 0));
+        assert_eq!(tall_hero.space_below, 100.0 * 56.0);
     }
 }

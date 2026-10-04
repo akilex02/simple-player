@@ -1,5 +1,5 @@
 use super::hero::{self, HeroAction, HeroInfo};
-use super::layout::{column_widths, eq_heights, hero_text, HeroContext, TableColumns};
+use super::layout::{column_widths, eq_heights, hero_text, list_layout, HeroContext, TableColumns};
 use crate::library::Song;
 use crate::state::{AppState, SortDirection, SortField};
 use crate::theme::{self, icons, radius, space, text, with_alpha};
@@ -7,10 +7,18 @@ use crate::ui::format_time;
 use crate::ui::textures::TextureCache;
 use crate::ui::widgets::cover::paint_cover;
 use crate::ui::widgets::empty_state::empty_state;
-use eframe::egui::{self, Color32, FontId};
+use crate::ui::widgets::pill_button::{PillButton, PillKind};
+use eframe::egui::{self, Color32, FontId, RichText};
 
 const ROW_H: f32 = 52.0;
+const ROW_GAP: f32 = 4.0;
 const COVER: f32 = 40.0;
+const HEADER_H: f32 = 28.0;
+/// Alto de la mini barra fija y su carátula.
+const MINI_H: f32 = 44.0;
+const MINI_COVER: f32 = 32.0;
+/// Puntos de scroll tras salir el hero en los que la mini barra termina de aparecer.
+const MINI_FADE: f32 = 24.0;
 
 /// Canciones de la biblioteca, de un artista o de un álbum, con encabezado y tabla virtualizada.
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache) {
@@ -28,10 +36,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
 
     let indices = state.visible_song_indices();
     let info = hero_info(state, &indices);
-    let action = hero::show(ui, textures, &info);
-    ui.add_space(space::LG);
+    // El modo del encabezado se decide con el alto de la pantalla, no con el del scroll.
+    let compact = hero::is_compact(ui.available_height());
 
     if indices.is_empty() {
+        hero::show(ui, textures, &info, compact);
+        ui.add_space(space::LG);
         let query = state.search_query.trim().to_string();
         if empty_state(ui, icons::MAGNIFYING_GLASS, &format!("Sin resultados para «{query}»"), "Revisa la ortografía o prueba otra búsqueda.", Some("Limpiar búsqueda")) {
             state.search_query.clear();
@@ -39,7 +49,89 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
         return;
     }
 
-    if action != HeroAction::None {
+    let cols = column_widths(ui.available_width() - 14.0);
+    let current_path = state.current_song().map(|s| s.path.clone());
+    let playing = state.is_playing;
+    let accent = theme::accent(ui.ctx());
+    let time = ui.input(|i| i.time) as f32;
+    let mut clicked: Option<usize> = None;
+    let mut action = HeroAction::None;
+
+    // Un solo scroll para todo: hero, encabezado de columnas y filas (virtualizadas). Cuando el hero sale
+    // de la vista, una mini barra con las acciones y el encabezado de columnas quedan fijos arriba.
+    let mut scroll = egui::ScrollArea::vertical().auto_shrink([false, false]);
+    if let Some(offset) = state.dev_scroll.take() {
+        scroll = scroll.vertical_scroll_offset(offset);
+    }
+    let mut pinned = false;
+    let mut scroll_past_hero = 0.0;
+    let mut viewport_top = 0.0;
+    let mut content_x = ui.available_rect_before_wrap().x_range();
+    let scroll_out = scroll.show_viewport(ui, |ui, viewport| {
+        let origin = ui.max_rect().top();
+        // Dónde está en pantalla el borde superior de lo visible (donde se fija la barra).
+        viewport_top = origin + viewport.min.y;
+        action = hero::show(ui, textures, &info, compact);
+        ui.add_space(space::LG);
+        let hero_end = ui.cursor().top() - origin;
+
+        // El encabezado ocupa su sitio natural; si ya está fijo arriba solo se reserva el espacio.
+        let (header_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), HEADER_H), egui::Sense::hover());
+        let pinned_now = viewport.min.y >= hero_end;
+        if !pinned_now {
+            header(ui, state, &cols, header_rect);
+        }
+        content_x = header_rect.x_range();
+
+        ui.spacing_mut().item_spacing.y = ROW_GAP;
+        let pitch = ROW_H + ROW_GAP;
+        let rows_origin = ui.cursor().top();
+        let layout = list_layout(viewport.min.y, viewport.height(), rows_origin - origin, hero_end, pitch, indices.len());
+        pinned = layout.pinned;
+        scroll_past_hero = viewport.min.y - hero_end;
+
+        // Se reserva el alto de todas las filas (para que el scroll mida bien) y solo se dibujan las visibles.
+        let (rows_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), (indices.len() as f32 * pitch - ROW_GAP).max(0.0)), egui::Sense::hover());
+        let draw_rect = egui::Rect::from_min_max(
+            egui::pos2(rows_rect.left(), rows_origin + layout.first_row as f32 * pitch),
+            egui::pos2(rows_rect.right(), rows_origin + layout.last_row as f32 * pitch),
+        );
+        let mut rows_ui = ui.new_child(egui::UiBuilder::new().max_rect(draw_rect));
+        rows_ui.spacing_mut().item_spacing.y = ROW_GAP;
+        for i in layout.first_row..layout.last_row {
+            let song = &state.songs[indices[i]];
+            let (rect, response) = rows_ui.allocate_exact_size(egui::vec2(rows_ui.available_width(), ROW_H), crate::ui::widgets::click_without_focus());
+            let is_current = current_path.as_deref() == Some(song.path.as_str());
+            paint_row(&rows_ui, rect, &response, song, i + 1, is_current && playing, is_current, &cols, accent, time, textures);
+            if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                clicked = Some(i);
+            }
+        }
+    });
+
+    if pinned {
+        let area = scroll_out.inner_rect;
+        let overlay = egui::Rect::from_min_size(egui::pos2(area.left(), viewport_top), egui::vec2(area.width(), MINI_H + HEADER_H));
+        let mini = egui::Rect::from_min_size(egui::pos2(content_x.min, overlay.top()), egui::vec2(content_x.max - content_x.min, MINI_H));
+        let header_rect = egui::Rect::from_min_size(egui::pos2(content_x.min, overlay.top() + MINI_H), egui::vec2(content_x.max - content_x.min, HEADER_H));
+        // Fondo que tapa las filas que pasan por debajo; además absorbe los clics.
+        // Opaco (con 250 egui deja ver un 2 % de las filas) y 3 px más arriba: el scroll recorta con ese margen.
+        let backdrop = egui::Rect::from_min_max(egui::pos2(overlay.left(), overlay.top() - 3.0), overlay.max);
+        ui.painter_at(backdrop).rect_filled(backdrop, 0.0, theme::BG_BASE);
+        ui.interact(overlay, egui::Id::new("songs_pinned_overlay"), egui::Sense::click_and_drag());
+        let fade = (scroll_past_hero / MINI_FADE).clamp(0.0, 1.0);
+        let mini_action = mini_bar(ui, textures, &info, mini, fade);
+        if mini_action != HeroAction::None {
+            action = mini_action;
+        }
+        header(ui, state, &cols, header_rect);
+    }
+
+    if let Some(i) = clicked {
+        let song = state.songs[indices[i]].clone();
+        let queue: Vec<Song> = indices.iter().map(|&i| state.songs[i].clone()).collect();
+        state.handle_play_song_from_list(&song, Some(queue));
+    } else if action != HeroAction::None {
         let queue: Vec<Song> = indices.iter().map(|&i| state.songs[i].clone()).collect();
         match action {
             HeroAction::Play => {
@@ -48,36 +140,30 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
             }
             _ => state.start_shuffle_play(queue),
         }
-        return;
     }
+}
 
-    let cols = column_widths(ui.available_width() - 14.0);
-    header(ui, state, &cols);
-
-    let current_path = state.current_song().map(|s| s.path.clone());
-    let playing = state.is_playing;
-    let accent = theme::accent(ui.ctx());
-    let time = ui.input(|i| i.time) as f32;
-    let mut clicked: Option<usize> = None;
-
-    ui.spacing_mut().item_spacing.y = 4.0;
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, ROW_H, indices.len(), |ui, range| {
-        for i in range {
-            let song = &state.songs[indices[i]];
-            let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), crate::ui::widgets::click_without_focus());
-            let is_current = current_path.as_deref() == Some(song.path.as_str());
-            paint_row(ui, rect, &response, song, i + 1, is_current && playing, is_current, &cols, accent, time, textures);
-            if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                clicked = Some(i);
-            }
+/// Barra fija con las acciones del hero, visible cuando el hero ya salió de la vista.
+fn mini_bar(ui: &mut egui::Ui, textures: &mut TextureCache, info: &HeroInfo, rect: egui::Rect, fade: f32) -> HeroAction {
+    let mut action = HeroAction::None;
+    let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    bar.set_opacity(fade);
+    let (cover_rect, _) = bar.allocate_exact_size(egui::vec2(MINI_COVER, MINI_COVER), egui::Sense::hover());
+    let rounding = if info.circle { MINI_COVER / 2.0 } else { 6.0 };
+    paint_cover(&bar, cover_rect, textures, &info.cover, rounding, icons::MUSIC_NOTES, false);
+    bar.add_space(space::MD);
+    bar.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if PillButton::new("Aleatorio", PillKind::Secondary).icon(icons::SHUFFLE).show(ui).clicked() {
+            action = HeroAction::Shuffle;
         }
+        if PillButton::new("Reproducir", PillKind::Primary).icon(icons::PLAY).show(ui).clicked() {
+            action = HeroAction::Play;
+        }
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.add(egui::Label::new(RichText::new(&info.title).font(theme::bold(text::MD)).color(theme::TEXT_MAIN)).truncate());
+        });
     });
-
-    if let Some(i) = clicked {
-        let song = state.songs[indices[i]].clone();
-        let queue: Vec<Song> = indices.iter().map(|&i| state.songs[i].clone()).collect();
-        state.handle_play_song_from_list(&song, Some(queue));
-    }
+    action
 }
 
 fn hero_info(state: &AppState, indices: &[usize]) -> HeroInfo {
@@ -95,8 +181,7 @@ fn hero_info(state: &AppState, indices: &[usize]) -> HeroInfo {
     HeroInfo { eyebrow: t.eyebrow, title: t.title, subtitle: t.subtitle, cover, circle }
 }
 
-fn header(ui: &mut egui::Ui, state: &mut AppState, cols: &TableColumns) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::hover());
+fn header(ui: &mut egui::Ui, state: &mut AppState, cols: &TableColumns, rect: egui::Rect) {
     ui.painter().text(
         egui::pos2(rect.left() + cols.index / 2.0, rect.center().y),
         egui::Align2::CENTER_CENTER,

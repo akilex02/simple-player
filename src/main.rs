@@ -111,6 +111,7 @@ impl App {
             };
         }
         state.show_queue = std::env::args().any(|a| a == "--queue");
+        state.dev_scroll = ui::gallery::arg_value("--scroll").and_then(|v| v.parse().ok());
         if let Some(needle) = ui::gallery::arg_value("--song") {
             if let Some(song) = state.songs.iter().find(|s| s.path.contains(&needle)).cloned() {
                 state.active_queue = vec![song];
