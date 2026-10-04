@@ -40,5 +40,12 @@ out=$(tags simpleplayer v0.1.0 | KEEP=3 bash "$SCRIPT"); code=$?
 eq "$code" "0" "sin tags dev: sale bien"
 eq "$out" "" "sin tags dev: no imprime nada"
 
+# 8. El orden de entrada no importa: manda el número N del tag (run_number), no la fecha.
+#    (Dos releases del mismo commit comparten fecha de creación y salían en cualquier orden.)
+out=$(tags v0.1.0-dev.6 v0.1.0-dev.8 v0.1.0-dev.7 v0.1.0-dev.5 | KEEP=2 bash "$SCRIPT" | tr '\n' ' ')
+eq "$out" "v0.1.0-dev.6 v0.1.0-dev.5 " "conserva los N más altos aunque lleguen desordenados"
+out=$(tags v0.1.0-dev.9 v0.1.0-dev.10 v0.1.0-dev.2 | KEEP=2 bash "$SCRIPT" | tr '\n' ' ')
+eq "$out" "v0.1.0-dev.2 " "compara N como número (10 > 9)"
+
 echo
 [ "$fails" -eq 0 ] && echo "TODO BIEN" || { echo "$fails prueba(s) fallaron"; exit 1; }
