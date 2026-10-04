@@ -1,0 +1,17 @@
+# Herramientas de empaquetado con versión y hash fijos (se verifican antes de ejecutarlas).
+# Para actualizar una: cambiar la URL, descargar el archivo y poner el nuevo `sha256sum`; un commit explícito.
+LINUXDEPLOY_NAME=linuxdeploy-x86_64.AppImage
+LINUXDEPLOY_URL=https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+LINUXDEPLOY_SHA256=c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+
+GSTREAMER_PLUGIN_NAME=linuxdeploy-plugin-gstreamer.sh
+GSTREAMER_PLUGIN_URL=https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/2a2e67491c32995a3f279ad0ecbe77abd512b42a/linuxdeploy-plugin-gstreamer.sh
+GSTREAMER_PLUGIN_SHA256=c107b49d84edbffc6ab226ed1007e0626a4f7aa2c3a36b7782bef62351d49e94
+
+APPIMAGE_PLUGIN_NAME=linuxdeploy-plugin-appimage-x86_64.AppImage
+APPIMAGE_PLUGIN_URL=https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage
+APPIMAGE_PLUGIN_SHA256=992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3
+
+APPIMAGETOOL_NAME=appimagetool-x86_64.AppImage
+APPIMAGETOOL_URL=https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+APPIMAGETOOL_SHA256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0

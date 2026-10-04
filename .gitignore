@@ -11,6 +11,8 @@
 # Empaquetado
 *.AppImage
 squashfs-root/
+/dist/
+/.cache/
 
 # Herramientas locales
 .claude/
