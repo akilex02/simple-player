@@ -1,4 +1,5 @@
 mod audio;
+mod desktop_integration;
 mod events;
 mod gpu_probe;
 mod hotkeys;
@@ -90,7 +91,9 @@ impl App {
             }
         };
 
-        let mut state = AppState::new(audio, mpris_tx).with_settings(settings, settings_path);
+        // Registrar y quitar solo escriben en ejecuciones normales (con ajustes reales); en desarrollo solo se muestra.
+        let appimage = desktop_integration::appimage_path();
+        let mut state = AppState::new(audio, mpris_tx).with_settings(settings, settings_path).with_appimage(appimage);
         state.init();
         if let Some(tab) = ui::gallery::arg_value("--tab") {
             match tab.as_str() {
@@ -435,6 +438,7 @@ impl App {
             });
 
         self.fullscreen.show(ctx, &mut self.state, &mut self.textures, &self.backdrop, &self.viz);
+        ui::integration_prompt::show(ctx, &mut self.state);
 
         let lines = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("shell_borders")));
         let stroke = egui::Stroke::new(1.0_f32, theme::GLASS_BORDER);

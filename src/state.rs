@@ -1,5 +1,6 @@
 use crate::audio::clock::SeekGuard;
 use crate::audio::AudioPlayer;
+use crate::desktop_integration::{self, Status};
 use crate::library::{load_cached_library, scan_and_cache, select_folder, Song};
 use crate::library_view::{self, AlbumGroup, LibraryView};
 use crate::lyrics::{self, Lyrics};
@@ -121,6 +122,11 @@ pub struct AppState {
     settings_path: Option<PathBuf>,
     /// `true` tras un restablecimiento de fábrica: al cerrar no se guarda el tamaño de la ventana.
     pub window_reset: bool,
+    /// Ruta del AppImage en ejecución (solo en ejecuciones normales); `None` si no corre como AppImage.
+    appimage: Option<PathBuf>,
+    /// ¿Está registrado en el escritorio? Se lee del disco al arrancar y tras registrar o quitar (no cada frame).
+    integration_status: Option<Status>,
+    integration_prompt_hidden: bool,
     /// Segundo en el que debe continuar la canción restaurada; se aplica cuando el reproductor ya cargó el archivo.
     pending_resume: Option<f64>,
     /// La canción restaurada al arrancar todavía no se cargó en el reproductor (no ha sonado).
@@ -178,6 +184,9 @@ impl AppState {
             settings: Settings::default(),
             settings_path: None,
             window_reset: false,
+            appimage: None,
+            integration_status: None,
+            integration_prompt_hidden: false,
             pending_resume: None,
             restored_unloaded: false,
             last_saved_position: None,
@@ -567,6 +576,70 @@ impl AppState {
         self
     }
 
+    /// Indica que la app corre como AppImage (`APPIMAGE`) y lee si ya está registrada en el escritorio.
+    pub fn with_appimage(mut self, appimage: Option<PathBuf>) -> Self {
+        self.appimage = appimage;
+        self.refresh_integration_status();
+        self
+    }
+
+    fn integration_paths() -> desktop_integration::Paths {
+        desktop_integration::paths(std::env::var("XDG_DATA_HOME").ok().as_deref(), std::env::var("HOME").ok().as_deref())
+    }
+
+    fn refresh_integration_status(&mut self) {
+        self.integration_status = self.appimage.as_deref().map(|app| desktop_integration::status(&Self::integration_paths(), app));
+    }
+
+    pub fn is_appimage(&self) -> bool {
+        self.appimage.is_some()
+    }
+
+    pub fn integration_status(&self) -> Option<Status> {
+        self.integration_status
+    }
+
+    /// ¿Se muestra el aviso de «Registrar en el menú de aplicaciones»?
+    pub fn should_prompt_integration(&self) -> bool {
+        match self.integration_status {
+            Some(status) => desktop_integration::should_prompt(
+                self.is_appimage(),
+                status,
+                self.settings.integration_prompt_dismissed,
+                self.integration_prompt_hidden,
+            ),
+            None => false,
+        }
+    }
+
+    /// «Ahora no» oculta el aviso en esta sesión; «No volver a preguntar» lo guarda en los ajustes.
+    pub fn dismiss_integration_prompt(&mut self, forever: bool) {
+        self.integration_prompt_hidden = true;
+        if forever {
+            self.update_settings(|s| s.integration_prompt_dismissed = true);
+        }
+    }
+
+    /// Escribe el `.desktop` y el ícono de usuario. Solo en ejecuciones normales y como AppImage.
+    pub fn register_desktop(&mut self) -> Result<(), String> {
+        let Some(app) = self.appimage.clone() else { return Err("La app no corre como AppImage".to_string()) };
+        if self.settings_path.is_none() {
+            return Err("No disponible en ejecuciones de desarrollo".to_string());
+        }
+        desktop_integration::install(&Self::integration_paths(), &app, include_bytes!("../assets/icons/icon.png")).map_err(|e| e.to_string())?;
+        self.refresh_integration_status();
+        Ok(())
+    }
+
+    pub fn unregister_desktop(&mut self) -> Result<(), String> {
+        if self.settings_path.is_none() {
+            return Err("No disponible en ejecuciones de desarrollo".to_string());
+        }
+        desktop_integration::remove(&Self::integration_paths()).map_err(|e| e.to_string())?;
+        self.refresh_integration_status();
+        Ok(())
+    }
+
     fn save_settings(&self) {
         if let Some(path) = &self.settings_path {
             if let Err(e) = settings::save(path, &self.settings) {
@@ -932,5 +1005,44 @@ mod tests {
         s.is_playing = true;
         s.set_playing(false);
         assert!(!s.is_playing);
+    }
+
+    fn as_appimage(s: &mut AppState) {
+        s.appimage = Some(PathBuf::from("/opt/Simple.AppImage"));
+        s.integration_status = Some(crate::desktop_integration::Status::NotInstalled);
+    }
+
+    #[test]
+    fn el_aviso_de_registro_solo_sale_como_appimage_sin_registrar() {
+        let mut s = state();
+        assert!(!s.should_prompt_integration(), "sin AppImage no se ofrece");
+        as_appimage(&mut s);
+        assert!(s.should_prompt_integration());
+        s.integration_status = Some(crate::desktop_integration::Status::Installed);
+        assert!(!s.should_prompt_integration(), "ya registrado");
+    }
+
+    #[test]
+    fn ahora_no_oculta_el_aviso_solo_en_esta_sesion_y_no_volver_a_preguntar_se_guarda() {
+        let mut s = state();
+        as_appimage(&mut s);
+        s.dismiss_integration_prompt(false);
+        assert!(!s.should_prompt_integration());
+        assert!(!s.settings.integration_prompt_dismissed, "«ahora no» no se guarda");
+
+        let mut s = state();
+        as_appimage(&mut s);
+        s.dismiss_integration_prompt(true);
+        assert!(!s.should_prompt_integration());
+        assert!(s.settings.integration_prompt_dismissed, "«no volver a preguntar» se guarda");
+    }
+
+    #[test]
+    fn en_corridas_de_desarrollo_registrar_no_escribe_nada() {
+        let mut s = state(); // sin ruta de ajustes = corrida de desarrollo
+        as_appimage(&mut s);
+        let result = s.register_desktop();
+        assert!(result.is_err(), "no disponible en desarrollo");
+        assert_eq!(s.integration_status, Some(crate::desktop_integration::Status::NotInstalled));
     }
 }

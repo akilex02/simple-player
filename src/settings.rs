@@ -15,11 +15,13 @@ pub struct Settings {
     /// Etiqueta de `VisualizerMode`.
     pub default_visualizer: String,
     pub remember_window_size: bool,
+    /// El usuario pidió no volver a ver el aviso de registrar el AppImage en el escritorio.
+    pub integration_prompt_dismissed: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { version: VERSION, music_folders: Vec::new(), default_visualizer: DEFAULT_VISUALIZER.into(), remember_window_size: true }
+        Self { version: VERSION, music_folders: Vec::new(), default_visualizer: DEFAULT_VISUALIZER.into(), remember_window_size: true, integration_prompt_dismissed: false }
     }
 }
 
@@ -270,5 +272,13 @@ mod tests {
         let args: Vec<String> = ["bin", "--music-folder", "/a", "--shot", "x.png", "--music-folder", "/b", "--music-folder"].iter().map(|s| s.to_string()).collect();
         assert_eq!(dev_folders_from_args(&args), vec!["/a".to_string(), "/b".to_string()]);
         assert!(dev_folders_from_args(&["bin".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn no_volver_a_preguntar_por_el_registro_se_recuerda_y_un_archivo_viejo_lo_deja_en_falso() {
+        assert!(!Settings::default().integration_prompt_dismissed);
+        assert!(!parse(r#"{"music_folders": ["/x"]}"#).unwrap().integration_prompt_dismissed, "archivo anterior sin el campo");
+        let s = Settings { integration_prompt_dismissed: true, ..Settings::default() };
+        assert_eq!(parse(&to_json(&s)), Some(s));
     }
 }

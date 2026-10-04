@@ -27,6 +27,8 @@ pub struct SettingsUi {
     pub confirm: Option<Confirm>,
     /// Texto de la última acción y si es un error.
     pub status: Option<(String, bool)>,
+    /// Resultado de registrar o quitar el AppImage del escritorio (junto a su fila).
+    pub integration_msg: Option<(String, bool)>,
     last_frame: Option<u64>,
 }
 
@@ -36,6 +38,7 @@ impl SettingsUi {
         if self.last_frame.map_or(true, |last| frame != last + 1 && frame != last) {
             self.confirm = None;
             self.status = None;
+            self.integration_msg = None;
         }
         self.last_frame = Some(frame);
     }
@@ -97,7 +100,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     let mut view: SettingsUi = ui.ctx().data(|d| d.get_temp(egui::Id::new("settings_ui"))).unwrap_or_default();
     view.begin_frame(ui.ctx().cumulative_pass_nr());
 
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+    let mut scroll = egui::ScrollArea::vertical().auto_shrink([false, false]);
+    if let Some(offset) = state.dev_scroll.take() {
+        scroll = scroll.vertical_scroll_offset(offset); // solo desarrollo (`--scroll N`)
+    }
+    scroll.show(ui, |ui| {
         ui.label(RichText::new("CONFIGURACIÓN").font(theme::deco(text::XL + 4.0)).color(theme::accent(ui.ctx())));
         ui.add_space(space::LG);
         library_section(ui, state);
@@ -106,7 +113,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
         ui.add_space(GAP);
         data_section(ui, state, &mut view);
         ui.add_space(GAP);
-        about_section(ui);
+        about_section(ui, state, &mut view);
         ui.add_space(GAP);
     });
 
@@ -337,7 +344,45 @@ fn confirm_row(
     });
 }
 
-fn about_section(ui: &mut egui::Ui) {
+/// Texto de la fila de integración con el escritorio y de su botón, según el estado.
+pub fn integration_labels(status: crate::desktop_integration::Status) -> (&'static str, &'static str) {
+    use crate::desktop_integration::Status;
+    match status {
+        Status::NotInstalled => (
+            "Registra el AppImage en el menú de aplicaciones para ver su ícono y los controles multimedia en la barra de tareas.",
+            "Registrar",
+        ),
+        Status::Installed => ("Registrado: el escritorio muestra su ícono y los controles multimedia.", "Quitar"),
+        Status::Outdated => ("El registro apunta a otra ubicación del AppImage.", "Actualizar"),
+    }
+}
+
+fn integration_row(ui: &mut egui::Ui, state: &mut AppState, view: &mut SettingsUi) {
+    use crate::desktop_integration::Status;
+    let Some(status) = state.integration_status() else { return };
+    let (text, button) = integration_labels(status);
+    let mut clicked = false;
+    row(ui, "Integración con el escritorio", text, |ui| {
+        let kind = if status == Status::Installed { PillKind::Secondary } else { PillKind::Primary };
+        let icon = if status == Status::Installed { icons::TRASH } else { icons::PLUS };
+        clicked = PillButton::new(button, kind).icon(icon).show(ui).clicked();
+    });
+    if clicked {
+        let result = if status == Status::Installed { state.unregister_desktop() } else { state.register_desktop() };
+        view.integration_msg = Some(match result {
+            Ok(()) if status == Status::Installed => ("Registro eliminado.".to_string(), false),
+            Ok(()) => ("Registrado. Si ya estaba abierta, ciérrala y ábrela de nuevo para ver el ícono.".to_string(), false),
+            Err(e) => (e, true),
+        });
+    }
+    if let Some((text, is_error)) = &view.integration_msg {
+        let color = if *is_error { egui::Color32::from_rgb(255, 120, 120) } else { theme::TEXT_MUTED };
+        ui.label(RichText::new(text).size(text::SM).color(color));
+    }
+    ui.add_space(space::XS);
+}
+
+fn about_section(ui: &mut egui::Ui, state: &mut AppState, view: &mut SettingsUi) {
     section(ui, "ACERCA DE", |ui| {
         ui.label(RichText::new(format!("Simple Player {}", env!("CARGO_PKG_VERSION"))).font(theme::bold(text::BASE)));
         ui.add_space(space::SM);
@@ -354,6 +399,7 @@ fn about_section(ui: &mut egui::Ui) {
             });
             ui.add_space(space::XS);
         }
+        integration_row(ui, state, view);
     });
 }
 
@@ -521,5 +567,19 @@ mod tests {
         assert_eq!(text_max_width(1000.0, 200.0), 784.0);
         assert_eq!(text_max_width(1000.0, 400.0), 584.0, "con más controles el texto se parte antes");
         assert_eq!(text_max_width(300.0, 400.0), 160.0, "nunca menos que el mínimo legible");
+    }
+
+    #[test]
+    fn la_fila_de_integracion_cambia_segun_el_estado() {
+        use crate::desktop_integration::Status;
+        let (text, button) = integration_labels(Status::NotInstalled);
+        assert_eq!(button, "Registrar");
+        assert!(text.contains("menú de aplicaciones") && text.contains("controles multimedia"));
+        let (text, button) = integration_labels(Status::Installed);
+        assert_eq!(button, "Quitar");
+        assert!(text.starts_with("Registrado"));
+        let (text, button) = integration_labels(Status::Outdated);
+        assert_eq!(button, "Actualizar");
+        assert!(text.contains("otra ubicación"));
     }
 }

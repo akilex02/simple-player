@@ -103,7 +103,7 @@ chmod +x Simple_Player-*.AppImage
 sha256sum -c SHA256SUMS --ignore-missing
 \`\`\`
 
-Para que Plasma muestre los controles multimedia en la miniatura de la barra de tareas, el AppImage suelto debe registrarse en el menú (por ejemplo con AppImageLauncher).
+Al abrirlo por primera vez, la app ofrece registrarse en el menú de aplicaciones (un \`.desktop\` y el ícono en \`~/.local/share\`, sin permisos de administrador): así el escritorio muestra su ícono en la barra de tareas y los controles multimedia. También está en Configuración → Acerca de.
 
 ---
 

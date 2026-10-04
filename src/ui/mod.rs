@@ -1,4 +1,5 @@
 pub mod fullscreen;
+pub mod integration_prompt;
 pub mod gallery;
 pub mod lyrics_view;
 pub mod progress;
