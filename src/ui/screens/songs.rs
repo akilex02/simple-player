@@ -20,6 +20,8 @@ const MINI_H: f32 = 44.0;
 const MINI_COVER: f32 = 32.0;
 /// Margen interno de la mini barra dentro de la tarjeta fija.
 const MINI_PAD: f32 = 14.0;
+/// Ancho del canal de la barra de desplazamiento, a la derecha del contenido.
+const SCROLL_GUTTER: f32 = 14.0;
 /// Puntos de scroll tras salir el hero en los que la mini barra termina de aparecer.
 const MINI_FADE: f32 = 24.0;
 
@@ -62,11 +64,18 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, textures: &mut TextureCache
 
     // Un solo scroll para todo: hero, encabezado de columnas y filas (virtualizadas). Cuando el hero sale
     // de la vista, una mini barra con las acciones y el encabezado de columnas quedan fijos arriba.
+    // La barra de desplazamiento vive en un canal propio: el área se extiende hacia el margen derecho de
+    // la pantalla y el contenido conserva su ancho (así ni el hero ni la tarjeta fija chocan con ella).
+    let avail = ui.available_rect_before_wrap();
+    let content_w = avail.width();
+    let scroll_rect = egui::Rect::from_min_max(avail.min, egui::pos2(avail.right() + SCROLL_GUTTER, avail.bottom()));
+    let mut scroll_ui = ui.new_child(egui::UiBuilder::new().max_rect(scroll_rect));
     let mut scroll = egui::ScrollArea::vertical().auto_shrink([false, false]);
     if let Some(offset) = state.dev_scroll.take() {
         scroll = scroll.vertical_scroll_offset(offset);
     }
-    scroll.show_viewport(ui, |ui, viewport| {
+    scroll.show_viewport(&mut scroll_ui, |ui, viewport| {
+        ui.set_max_width(content_w);
         let origin = ui.max_rect().top();
         // Dónde está en pantalla el borde superior de lo visible (donde se fija la barra).
         let viewport_top = origin + viewport.min.y;
